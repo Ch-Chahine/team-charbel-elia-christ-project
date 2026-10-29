@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}My Favorites{% endblock %}
+{% block content %}
+<h1>My Favorites</h1>
+{% if favorites %}
+  <div class="cards">
+    {% for f in favorites %}
+      <div class="card">
+        <a href="{{ url_for('item', item_id=f.item_id) }}">
+          <img src="{{ f.item_image }}" alt="{{ f.item_title }}"><span>{{ f.item_title }}</span>
+        </a>
+        <form method="post" action="{{ url_for('favorites_remove') }}">
+          <input type="hidden" name="item_id" value="{{ f.item_id }}">
+          <input type="hidden" name="next" value="{{ url_for('favorites') }}">
+          <button class="btn remove">Remove</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p>No favorites yet. Find something and save it!</p>
+{% endif %}
+{% endblock %}

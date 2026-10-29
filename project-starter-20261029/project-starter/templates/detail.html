@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ item.title }}{% endblock %}
+{% block content %}
+<article class="detail">
+  <h1>{{ item.title }}</h1>
+  <img class="hero" src="{{ item.image }}" alt="{{ item.title }}">
+
+  {% if current_user %}
+    {% if item.id in favorite_ids %}
+      <form method="post" action="{{ url_for('favorites_remove') }}">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <button class="btn remove">Remove from favorites</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('favorites_add') }}">
+        <input type="hidden" name="item_id" value="{{ item.id }}">
+        <input type="hidden" name="item_title" value="{{ item.title }}">
+        <input type="hidden" name="item_image" value="{{ item.image }}">
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <button class="btn save">Save to favorites</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p><a href="{{ url_for('login') }}">Log in</a> to save this.</p>
+  {% endif %}
+
+  <!-- TODO: show the fields your API returns -->
+  <p class="description">{{ item.description }}</p>
+</article>
+{% endblock %}

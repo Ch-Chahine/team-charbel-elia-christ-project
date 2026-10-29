@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Find something</h1>
+<!-- TODO: change this to match your topic (e.g. "Search recipes", "Find a book") -->
+<form class="search" action="{{ url_for('search') }}" method="get">
+  <input type="text" name="q" placeholder="Search...">
+  <button type="submit">Search</button>
+</form>
+<p class="hint">This starter shows sample items. Edit <code>api_client.py</code> to use your own API.</p>
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Results{% endblock %}
+{% block content %}
+<h1>Results{% if query %} for "{{ query }}"{% endif %}</h1>
+{% if items %}
+  <div class="cards">
+    {% for it in items %}
+      <a class="card" href="{{ url_for('item', item_id=it.id) }}">
+        <img src="{{ it.image }}" alt="{{ it.title }}">
+        <span>{{ it.title }}</span>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="error">Nothing found. Try another search.</p>
+{% endif %}
+{% endblock %}
