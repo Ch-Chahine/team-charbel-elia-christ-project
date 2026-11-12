@@ -8,10 +8,16 @@ API, keeping the SAME return shapes so the rest of the app keeps working:
     search(query)   -> a list of dicts, each: {"id", "title", "image"}
     get_item(id)    -> one dict: {"id", "title", "image", "description"}
 """
-import requests  # you'll use this for the real API calls
+import logging
+import re
+
+import requests
+
+logger = logging.getLogger(__name__)
 
 TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
+GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"
 # ----- temporary sample data (delete once your API works) -----
 _SAMPLE = [
     {"id": "1", "title": "Example Item One",
