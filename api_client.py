@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
 GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"  # base URL of the town search; query goes in params
+GEOCODING_GET_URL = "https://geocoding-api.open-meteo.com/v1/get"  # one town by its id
+MAX_PLACE_ID = 2_147_483_647  # largest Int32 number; Open-Meteo rejects bigger ids
 MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
 MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
 TOWN_NAME_PATTERN = re.compile(r"^[A-Za-zÀ-ÿ\u0600-\u06FF .'-]+$")  # whole text: letters, space . ' - only
@@ -60,6 +62,16 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
         })  # end of the dict and of append(...)
     return towns  # [] if nothing matched, otherwise our clean towns
 
+
+def get_town(place_id):  # get one town's details from its Open-Meteo id
+    """Return one town dict; {} if the id is invalid, unknown or not in Lebanon; None if the API fails."""
+    try:  # the id may come from a URL or a form, so it may not be a number
+        place_id = int(place_id)  # accept 273140 or "273140"; "abc" or None raise an error
+    except (TypeError, ValueError):  # TypeError for None, ValueError for "abc"
+        return {}  # not a whole number -> no such town, no API call
+    if not (1 <= place_id <= MAX_PLACE_ID):  # must be positive and fit in Int32
+        return {}  # 0, negative or too big -> no such town, no API call
+    return {"id": place_id}  # TEMPORARY: echo the cleaned id so we can test validation
 
 
 # ----- temporary sample data (delete once your API works) -----
