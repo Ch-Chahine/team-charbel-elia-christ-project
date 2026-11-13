@@ -82,6 +82,14 @@ def search():  # show the towns that match the search box
             towns = result  # list of towns (may be empty)
     return render_template("results.html", query=query, towns=towns, errors=errors, api_failed=api_failed)  # send everything to the page
 
+@app.route("/town/<int:place_id>")  # GET /town/273140; <int:...> makes Flask return 404 for /town/abc
+def town(place_id):  # show one town (its 3-day forecast comes later)
+    data = api_client.get_town(place_id)  # town dict, {} (no such town) or None (API failed)
+    if data is None:  # Open-Meteo down or slow
+        return render_template("town.html", town=None, api_failed=True), 503  # 503 = "service unavailable"
+    if not data:  # {} -> bad id, unknown id, or a town outside Lebanon
+        abort(404)  # standard "page not found"
+    return render_template("town.html", town=data, api_failed=False)  # show the town
 
 @app.route("/item/<item_id>")
 def item(item_id):
