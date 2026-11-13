@@ -17,7 +17,21 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
-GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"
+GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"  # base URL of the town search; query goes in params
+MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
+MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
+TOWN_NAME_PATTERN = re.compile(r"^[A-Za-zÀ-ÿ\u0600-\u06FF .'-]+$")  # whole text: letters, space . ' - only
+
+def search_towns(name):  # find towns in Lebanon whose name matches what the user typed
+    """Return a list of towns; [] if input is invalid or nothing matches; None if the API fails."""
+    if not isinstance(name, str):  # reject anything that is not text (e.g. None, a number)
+        return []  # invalid input -> no API call
+    name = name.strip()  # remove spaces at both ends: "  Jounieh " -> "Jounieh"
+    if not (MIN_SEARCH_LENGTH <= len(name) <= MAX_SEARCH_LENGTH):  # length must be 2..60
+        return []  # too short or too long -> no API call
+    if not TOWN_NAME_PATTERN.match(name):  # only letters, space . ' - are allowed
+        return []  # forbidden characters -> no API call
+    return [name]  # TEMPORARY: echo the cleaned name so we can test validation; API call goes here next
 
 # ----- temporary sample data (delete once your API works) -----
 _SAMPLE = [
