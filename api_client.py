@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
 GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
 # ----- temporary sample data (delete once your API works) -----
 _SAMPLE = [
     {"id": "1", "title": "Example Item One",
