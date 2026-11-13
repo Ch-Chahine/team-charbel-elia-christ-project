@@ -71,7 +71,25 @@ def get_town(place_id):  # get one town's details from its Open-Meteo id
         return {}  # not a whole number -> no such town, no API call
     if not (1 <= place_id <= MAX_PLACE_ID):  # must be positive and fit in Int32
         return {}  # 0, negative or too big -> no such town, no API call
-    return {"id": place_id}  # TEMPORARY: echo the cleaned id so we can test validation
+    try:  # code inside can fail because of the network or the API
+        response = requests.get(GEOCODING_GET_URL, params={"id": place_id}, timeout=TIMEOUT)  # ask for one town, wait max 6 s
+        if response.status_code in (400, 404):  # Open-Meteo answers "Location ID not found" with an error status
+            return {}  # unknown id -> no such town (not an API failure)
+        response.raise_for_status()  # any other HTTP error (500, ...) becomes an exception
+        place = response.json()  # convert the JSON text into a Python dict (the town itself, no "results")
+    except requests.RequestException as error:  # timeout, no internet, server error or invalid JSON
+        logger.warning("Town lookup failed for id %s: %s", place_id, error)  # record the failure (no secrets)
+        return None  # None = the API failed (decision B)
+    if place.get("country_code") != "LB":  # only towns in Lebanon (someone could type another country's id in the URL)
+        return {}  # outside Lebanon -> no such town for our app
+    return {  # our clean town dict, same field names as search_towns
+        "id": place.get("id"),  # Open-Meteo place id
+        "name": place.get("name", ""),  # town name, e.g. "Jounieh"
+        "region": place.get("admin1", ""),  # governorate, e.g. "Mount Lebanon"
+        "district": place.get("admin2", ""),  # district, e.g. "Keserwan District" (can be missing)
+        "lat": place.get("latitude"),  # latitude in degrees
+        "lon": place.get("longitude"),  # longitude in degrees
+    }  # end of the town dict
 
 
 # ----- temporary sample data (delete once your API works) -----
