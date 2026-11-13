@@ -45,7 +45,22 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("Town search failed for %r: %s", name, error)  # record the failure (no secrets)
         return None  # None = the API failed (decision A)
-    return data.get("results", [])  # TEMPORARY: raw results; we reshape them in the next step
+    
+    towns = []  # empty list that we fill with clean towns
+    for place in data.get("results", []):  # loop over each raw town ([] if the key is missing)
+        if place.get("id") is None:  # a town without an id can't be saved or opened
+            continue  # skip it and go to the next town
+        towns.append({  # add one clean town dict to our list
+            "id": place.get("id"),  # Open-Meteo place id (the only value our DB stores)
+            "name": place.get("name", ""),  # town name, e.g. "Jounieh"
+            "region": place.get("admin1", ""),  # governorate, e.g. "Mount Lebanon"
+            "district": place.get("admin2", ""),  # district, e.g. "Keserwan District" (can be missing)
+            "lat": place.get("latitude"),  # latitude in degrees
+            "lon": place.get("longitude"),  # longitude in degrees
+        })  # end of the dict and of append(...)
+    return towns  # [] if nothing matched, otherwise our clean towns
+
+
 
 # ----- temporary sample data (delete once your API works) -----
 _SAMPLE = [
