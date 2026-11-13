@@ -31,7 +31,21 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
         return []  # too short or too long -> no API call
     if not TOWN_NAME_PATTERN.match(name):  # only letters, space . ' - are allowed
         return []  # forbidden characters -> no API call
-    return [name]  # TEMPORARY: echo the cleaned name so we can test validation; API call goes here next
+    params = {  # query parameters; requests URL-encodes them safely
+        "name": name,  # the cleaned text the user typed
+        "countryCode": "LB",  # only towns in Lebanon
+        "count": 10,  # at most 10 towns in the answer
+        "language": "en",  # town and region names in English
+        "format": "json",  # ask for a JSON reply
+    }
+    try:  # code inside can fail because of the network or the API
+        response = requests.get(GEOCODING_SEARCH_URL, params=params, timeout=TIMEOUT)  # send request, wait max 6 s
+        response.raise_for_status()  # turn HTTP errors (400, 500, ...) into an exception
+        data = response.json()  # convert the JSON text into a Python dict
+    except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
+        logger.warning("Town search failed for %r: %s", name, error)  # record the failure (no secrets)
+        return None  # None = the API failed (decision A)
+    return data.get("results", [])  # TEMPORARY: raw results; we reshape them in the next step
 
 # ----- temporary sample data (delete once your API works) -----
 _SAMPLE = [
