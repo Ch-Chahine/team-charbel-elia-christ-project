@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User, Favorite
 import api_client
-from validators import validate_signup, validate_login
+from validators import validate_signup, validate_login, validate_search
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
@@ -69,19 +69,27 @@ def home():
     return render_template("home.html")
 
 
-@app.route("/search")
-def search():
-    query = request.args.get("q", "").strip()
-    items = api_client.search(query) if query else []
-    return render_template("results.html", items=items, query=query)
+@app.route("/search")  # GET /search?q=jounieh -> results page
+def search():  # show the towns that match the search box
+    errors, query = validate_search(request.args)  # check ?q=...; query = cleaned text, errors = {} if valid
+    towns = []  # default: no towns to show
+    api_failed = False  # becomes True if Open-Meteo is down or slow
+    if not errors:  # only call the API when the input is valid
+        result = api_client.search_towns(query)  # a list of towns, [] (no match) or None (API failed)
+        if result is None:  # the API failed -> show "service unavailable"
+            api_failed = True  # the template uses this to show the error message
+        else:  # the API answered
+            towns = result  # list of towns (may be empty)
+    return render_template("results.html", query=query, towns=towns, errors=errors, api_failed=api_failed)  # send everything to the page
 
-
-@app.route("/item/<item_id>")
-def item(item_id):
-    data = api_client.get_item(item_id)
-    if not data:
-        abort(404)
-    return render_template("detail.html", item=data)
+@app.route("/town/<int:place_id>")  # GET /town/273140; <int:...> makes Flask return 404 for /town/abc
+def town(place_id):  # show one town (its 3-day forecast comes later)
+    data = api_client.get_town(place_id)  # town dict, {} (no such town) or None (API failed)
+    if data is None:  # Open-Meteo down or slow
+        return render_template("town.html", town=None, api_failed=True), 503  # 503 = "service unavailable"
+    if not data:  # {} -> bad id, unknown id, or a town outside Lebanon
+        abort(404)  # standard "page not found"
+    return render_template("town.html", town=data, api_failed=False)  # show the town
 
 
 # ===================================================================

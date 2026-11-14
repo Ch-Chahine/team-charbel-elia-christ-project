@@ -1,17 +1,24 @@
-{% extends "base.html" %}
-{% block title %}Results{% endblock %}
-{% block content %}
-<h1>Results{% if query %} for "{{ query }}"{% endif %}</h1>
-{% if items %}
-  <div class="cards">
-    {% for it in items %}
-      <a class="card" href="{{ url_for('item', item_id=it.id) }}">
-        <img src="{{ it.image }}" alt="{{ it.title }}">
-        <span>{{ it.title }}</span>
-      </a>
+{% extends "base.html" %}  {# use the shared layout (header, nav, flash messages) #}
+{% block title %}Towns{% endblock %}  {# browser tab title #}
+{% block content %}  {# this page's own content goes here #}
+<h1>Towns{% if query %} matching "{{ query }}"{% endif %}</h1>  {# {{ }} auto-escapes, so HTML typed by a user shows as plain text #}
+
+{% if errors.q %}  {# 1. invalid input (from validate_search) #}
+  <p class="error" role="alert">{{ errors.q }}</p>  {# role="alert": screen readers announce it (Week 12) #}
+{% elif api_failed %}  {# 2. Open-Meteo down or slow (search_towns returned None) #}
+  <p class="error" role="alert">The weather service is not responding right now. Please try again in a minute.</p>
+{% elif towns %}  {# 3. towns found #}
+  <div class="cards">  {# grid of cards (styled in static/style.css) #}
+    {% for town in towns %}  {# one card per town #}
+      <article class="card">  {# semantic element for one self-contained item #}
+        <h2><a href="{{ url_for('town', place_id=town.id) }}">{{ town.name }}</a></h2>  {# link to /town/<id> #}
+                <p>{{ town.region or "Lebanon" }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# "Lebanon" if the API has no region #}
+      </article>
     {% endfor %}
   </div>
-{% else %}
-  <p class="error">Nothing found. Try another search.</p>
+{% else %}  {# 4. valid search, but no match ([]) #}
+  <p class="error" role="status">No town in Lebanon matches "{{ query }}". Check the spelling and try again.</p>
 {% endif %}
+
+<p><a href="{{ url_for('home') }}">New search</a></p>  {# link back to the search box #}
 {% endblock %}
