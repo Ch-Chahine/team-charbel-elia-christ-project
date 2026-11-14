@@ -1,10 +1,14 @@
-{% extends "base.html" %}
-{% block content %}
-<h1>Find something</h1>
-<!-- TODO: change this to match your topic (e.g. "Search recipes", "Find a book") -->
-<form class="search" action="{{ url_for('search') }}" method="get">
-  <input type="text" name="q" placeholder="Search...">
-  <button type="submit">Search</button>
+{% extends "base.html" %}  {# use the shared layout (header, nav, flash messages) #}
+{% block title %}SolarSmart Lebanon{% endblock %}  {# browser tab title #}
+{% block content %}  {# this page's own content #}
+<h1>How much sun will your town get?</h1>  {# main heading of the page #}
+<p>Search a town in Lebanon to see where it is and, soon, its 3-day sunshine forecast.</p>  {# short intro #}
+
+<form class="search" action="{{ url_for('search') }}" method="get" role="search">  {# sends GET /search?q=... #}
+  <label for="q">Town name</label>  {# real label linked to the input by id (Week 12) #}
+  <input type="text" id="q" name="q" placeholder="e.g. Jounieh"
+         minlength="2" maxlength="60" required aria-describedby="q-hint">  {# browser hints only; the server still validates #}
+  <button type="submit">Search</button>  {# real button; Enter also submits #}
 </form>
-<p class="hint">This starter shows sample items. Edit <code>api_client.py</code> to use your own API.</p>
+<p class="hint" id="q-hint">At least 2 letters. Use letters, spaces, hyphens and apostrophes.</p>  {# explains the rules #}
 {% endblock %}
