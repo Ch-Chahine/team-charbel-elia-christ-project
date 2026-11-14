@@ -11,7 +11,7 @@
   <div class="cards">  {# grid of cards (styled in static/style.css) #}
     {% for town in towns %}  {# one card per town #}
       <article class="card">  {# semantic element for one self-contained item #}
-        <h2>{{ town.name }}</h2>  {# e.g. Jounieh #}
+        <h2><a href="{{ url_for('town', place_id=town.id) }}">{{ town.name }}</a></h2>  {# link to /town/<id> #}
         <p>{{ town.region }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# district only if present #}
       </article>
     {% endfor %}
