@@ -47,3 +47,19 @@
 ## 14 Nov 2026 — Review and team workflow
 - **Asked:** a line-by-line review of all my code for the oral defense; how teammates see and merge each other's branches.
 - **Used:** the Git workflow (branches → pull request → review → merge → everyone merges `main`), now in our project plan.
+
+## 14 Nov 2026 — Link search results to town pages
+- **Asked:** how to make each search result open its town page.
+- **Used:** `url_for('town', place_id=town.id)` inside each card's `<h2>` in `results.html`.
+- **Tested:** searched "Zah" → clicked Zahle → `/town/266045` showed Zahle, Bekaa, 33.84675, 35.90203; Tab + Enter also opens the links (keyboard access).
+
+## 14 Nov 2026 — Towns with no region
+- **Found:** "Ẓahr Baydar Durrah" (id 11260674) has no `admin1`/`admin2` in Open-Meteo's data, so its card had an empty line.
+- **My decision:** show "Lebanon" when the region is missing (`{{ town.region or "Lebanon" }}` in `results.html` and `town.html`). It is always true because we only accept towns with country code LB.
+- **Why in the template:** `api_client` keeps returning the real empty value; only the page decides how to display "unknown".
+- **Tested:** "Zah" → 4th card shows "Lebanon"; Zahle still shows "Bekaa".
+
+## 14 Nov 2026 — Minimum search length
+- **Question I raised:** should 1 character be enough, like on many websites?
+- **Checked:** Open-Meteo's documentation says 0–1 characters return nothing, 2 return exact matches only, 3+ fuzzy matches; confirmed in the browser (`name=Z` → no results, `name=Zah` → Zahle…).
+- **My decision:** keep the minimum at 2, so users get a clear message instead of a misleading "no towns found". Changing it later is one constant (`MIN_SEARCH_LENGTH`), shared by `api_client.py` and `validators.py`.
