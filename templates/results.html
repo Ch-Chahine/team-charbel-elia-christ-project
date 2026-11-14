@@ -12,7 +12,7 @@
     {% for town in towns %}  {# one card per town #}
       <article class="card">  {# semantic element for one self-contained item #}
         <h2><a href="{{ url_for('town', place_id=town.id) }}">{{ town.name }}</a></h2>  {# link to /town/<id> #}
-        <p>{{ town.region }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# district only if present #}
+                <p>{{ town.region or "Lebanon" }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# "Lebanon" if the API has no region #}
       </article>
     {% endfor %}
   </div>

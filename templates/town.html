@@ -7,7 +7,7 @@
 {% else %}  {# we have the town #}
   <article class="detail">  {# one self-contained item (semantic HTML) #}
     <h1>{{ town.name }}</h1>  {# e.g. Jounieh (auto-escaped) #}
-    <p>{{ town.region }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# district only if present #}
+        <p>{{ town.region or "Lebanon" }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# "Lebanon" if the API has no region #}
     <p>Coordinates: {{ town.lat }}, {{ town.lon }}</p>  {# from the API, never stored in our DB #}
     <p class="hint">The 3-day sunshine forecast will appear here.</p>  {# placeholder until get_town_forecast exists #}
   </article>
