@@ -1,19 +1,23 @@
 """
-api_client.py  --  ALL calls to your external API live here (one place).
+api_client.py -- all calls to the Open-Meteo API live here (one place).
 
-RIGHT NOW this returns a few SAMPLE items so the app runs out of the box.
-TODO (your team): replace the sample data with real calls to your chosen free
-API, keeping the SAME return shapes so the rest of the app keeps working:
+Geocoding (towns in Lebanon):
+    search_towns(name)  -> list of {id, name, region, district, lat, lon};
+                           [] if input is invalid or nothing matches; None if the API fails
+    get_town(place_id)  -> one {id, name, region, district, lat, lon};
+                           {} if the id is invalid, unknown or not in Lebanon; None if the API fails
 
-    search(query)   -> a list of dicts, each: {"id", "title", "image"}
-    get_item(id)    -> one dict: {"id", "title", "image", "description"}
+Every call validates its input first, uses a timeout, catches network errors,
+and logs failures (never secrets). Our database stores only place_id; names,
+coordinates and forecasts are always fetched from the API.
 """
-import logging
-import re
 
-import requests
+import logging  # built-in: write warning messages when the API fails
+import re  # built-in: regular expressions, to check allowed characters
 
-logger = logging.getLogger(__name__)
+import requests  # installed package: makes the HTTP calls to Open-Meteo
+
+logger = logging.getLogger(__name__)  # logger named "api_client"; shows in terminal + Render logs
 
 TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
@@ -23,6 +27,7 @@ MAX_PLACE_ID = 2_147_483_647  # largest Int32 number; Open-Meteo rejects bigger 
 MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
 MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
 TOWN_NAME_PATTERN = re.compile(r"^[A-Za-zÀ-ÿ\u0600-\u06FF .'-]+$")  # whole text: letters, space . ' - only
+
 
 def search_towns(name):  # find towns in Lebanon whose name matches what the user typed
     """Return a list of towns; [] if input is invalid or nothing matches; None if the API fails."""
@@ -47,7 +52,7 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("Town search failed for %r: %s", name, error)  # record the failure (no secrets)
         return None  # None = the API failed (decision A)
-    
+
     towns = []  # empty list that we fill with clean towns
     for place in data.get("results", []):  # loop over each raw town ([] if the key is missing)
         if place.get("id") is None:  # a town without an id can't be saved or opened
