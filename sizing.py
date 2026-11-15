@@ -11,6 +11,7 @@ import math  # built-in: math.ceil rounds UP (you can't buy part of a panel)
 PERFORMANCE_RATIO = 0.8  # real panels give ~80% of their rating (heat, wiring, inverter losses)
 DEFAULT_PANEL_W = 550  # watts of one typical panel sold in Lebanon
 PANEL_AREA_M2 = 2.6  # roof area of one 550 W panel, in m²
+PANEL_W_PER_M2 = DEFAULT_PANEL_W / PANEL_AREA_M2  # power per m² of panel (~211.5 W/m²), so any panel size gets its area
 INVERTER_MARGIN = 1.25  # +25% so the inverter survives start-up surges (motors, compressors)
 INVERTER_SIZES_KW = (3, 5, 8, 10, 12)  # standard inverter sizes we round up to
 BATTERY_DOD = 0.8  # depth of discharge: LiFePO4 batteries can safely use 80% of their capacity
@@ -51,10 +52,12 @@ def panels_needed(kwp, panel_w=DEFAULT_PANEL_W):  # turn kWp into whole panels
     """Return {panels, installed_kwp, roof_m2} for the needed kWp and one panel's watts."""
     if kwp <= 0 or panel_w <= 0:  # nothing needed, or an impossible panel size
         return {"panels": 0, "installed_kwp": 0.0, "roof_m2": 0.0}  # empty suggestion, no crash
-    # Formula: panels = ceil(kWp × 1000 ÷ panel_W)  (kW -> W, then divide by one panel; always round UP)
-    panels = math.ceil(kwp * 1000 / panel_w)  # e.g. 5830 W ÷ 550 W = 10.6 -> 11 panels
-    installed_kwp = round(panels * panel_w / 1000, 2)  # the real power of those panels, e.g. 11 × 550 W = 6.05 kWp
-    roof_m2 = round(panels * PANEL_AREA_M2, 1)  # roof space: about 2.6 m² per panel
+    # Formula: panels = ceil(kWp × 1000 ÷ panel_W), always rounded UP.
+    # round(kwp * 1000) first: decimals like 4.07 × 1000 give 4070.0000000000005 in a computer,
+    # and ceil would wrongly turn 11.000000000000002 into 12 (bug found by Elia in review).
+    panels = math.ceil(round(kwp * 1000) / panel_w)  # e.g. 5830 W ÷ 550 W = 10.6 -> 11 panels
+    installed_kwp = round(panels * panel_w / 1000, 2)  # real power of those panels, e.g. 11 × 550 W = 6.05 kWp
+    roof_m2 = round(panels * panel_w / PANEL_W_PER_M2, 1)  # roof space scales with panel size (550 W ≈ 2.6 m²)
     return {"panels": panels, "installed_kwp": installed_kwp, "roof_m2": roof_m2}  # what the page shows
 
 
