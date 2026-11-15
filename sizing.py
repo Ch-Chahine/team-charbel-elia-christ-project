@@ -56,3 +56,15 @@ def panels_needed(kwp, panel_w=DEFAULT_PANEL_W):  # turn kWp into whole panels
     installed_kwp = round(panels * panel_w / 1000, 2)  # the real power of those panels, e.g. 11 × 550 W = 6.05 kWp
     roof_m2 = round(panels * PANEL_AREA_M2, 1)  # roof space: about 2.6 m² per panel
     return {"panels": panels, "installed_kwp": installed_kwp, "roof_m2": roof_m2}  # what the page shows
+
+
+def inverter_size(peak_kw):  # pick a standard inverter for the peak load
+    """Return the smallest standard inverter (kW) that covers peak + 25%; 0 if no load; None if above 12 kW."""
+    if peak_kw <= 0:  # no appliances -> nothing to power
+        return 0  # no inverter needed
+    # Formula: needed = peak × 1.25 (25% margin for start-up surges), then round UP to a standard size
+    needed = peak_kw * INVERTER_MARGIN  # e.g. 3.5 kW × 1.25 = 4.375 kW
+    for size in INVERTER_SIZES_KW:  # try 3, 5, 8, 10, 12 in order (smallest first)
+        if size >= needed:  # the first size that is big enough
+            return size  # e.g. 5 kW
+    return None  # above 12 kW: too big for one standard inverter -> "ask an installer"
