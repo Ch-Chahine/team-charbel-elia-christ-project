@@ -68,3 +68,15 @@ def inverter_size(peak_kw):  # pick a standard inverter for the peak load
         if size >= needed:  # the first size that is big enough
             return size  # e.g. 5 kW
     return None  # above 12 kW: too big for one standard inverter -> "ask an installer"
+
+
+def battery_size(e_night, autonomy_days):  # battery big enough for the night load
+    """Return {battery_kwh, battery_modules}: 5 kWh modules covering the night load for the chosen days."""
+    if e_night <= 0 or autonomy_days <= 0:  # nothing used at night, or the user wants no backup
+        return {"battery_kwh": 0, "battery_modules": 0}  # no battery
+    # Formula: battery = E_night × autonomy ÷ (DoD × efficiency), then round UP to whole 5 kWh modules
+    # - DoD 0.8: we only use 80% of the battery so it lasts longer
+    # - efficiency 0.9: 10% is lost charging and discharging
+    needed = e_night * autonomy_days / (BATTERY_DOD * BATTERY_EFFICIENCY)  # e.g. 4 × 1 ÷ 0.72 = 5.56 kWh
+    modules = math.ceil(needed / BATTERY_MODULE_KWH)  # 5.56 ÷ 5 = 1.11 -> 2 modules (always round UP)
+    return {"battery_kwh": modules * BATTERY_MODULE_KWH, "battery_modules": modules}  # e.g. 10 kWh, 2 modules
