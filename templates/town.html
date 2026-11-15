@@ -9,7 +9,35 @@
     <h1>{{ town.name }}</h1>  {# e.g. Jounieh (auto-escaped) #}
         <p>{{ town.region or "Lebanon" }}{% if town.district %}, {{ town.district }}{% endif %}</p>  {# "Lebanon" if the API has no region #}
     <p>Coordinates: {{ town.lat }}, {{ town.lon }}</p>  {# from the API, never stored in our DB #}
-    <p class="hint">The 3-day sunshine forecast will appear here.</p>  {# placeholder until get_town_forecast exists #}
+        <section aria-labelledby="forecast-title">  {# a labelled section: screen readers announce its title #}
+      <h2 id="forecast-title">3-day sunshine forecast</h2>  {# section heading (h2 under the page's h1) #}
+      {% if forecast_failed %}  {# get_town_forecast returned None: the API failed #}
+        <p class="error" role="alert">The sunshine forecast is not available right now. Please try again in a minute.</p>
+      {% elif forecast %}  {# we have daily summaries from solar.daily_sunshine #}
+        <table>  {# a real table for tabular data (Week 12: semantic HTML) #}
+          <caption>Sunshine on a flat surface, from Open-Meteo</caption>  {# describes the table #}
+          <thead>  {# header row #}
+            <tr>
+              <th scope="col">Day</th>  {# scope="col": this header labels a column #}
+              <th scope="col">Sunshine (kWh/m²)</th>
+              <th scope="col">Sunniest hour</th>
+            </tr>
+          </thead>
+          <tbody>  {# one row per day #}
+            {% for day in forecast %}  {# loop over the 3 daily summaries #}
+              <tr>
+                <th scope="row">{{ day.date }}</th>  {# the date labels its row #}
+                <td>{{ day.kwh_m2 }}</td>  {# daily total, e.g. 3.55 #}
+                <td>{{ day.peak_time }} ({{ day.peak_wm2 | round | int }} W/m²)</td>  {# e.g. 12:00 (585 W/m²) #}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="hint">Each value is the average of the previous hour (12:00 means 11:00–12:00).</p>  {# honest note #}
+      {% else %}  {# no error, but no data either #}
+        <p role="status">No forecast data for this town.</p>
+      {% endif %}
+    </section>
   </article>
 {% endif %}
 <p><a href="{{ url_for('home') }}">New search</a></p>  {# link back to the search box #}

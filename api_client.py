@@ -23,6 +23,7 @@ TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 
 GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"  # base URL of the town search; query goes in params
 GEOCODING_GET_URL = "https://geocoding-api.open-meteo.com/v1/get"  # one town by its id
+FORECAST_URL = "https://api.open-meteo.com/v1/forecast"  # weather forecast API (hourly sunshine)
 MAX_PLACE_ID = 2_147_483_647  # largest Int32 number; Open-Meteo rejects bigger ids
 MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
 MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
@@ -96,4 +97,35 @@ def get_town(place_id):  # get one town's details from its Open-Meteo id
         "lon": place.get("longitude"),  # longitude in degrees
     }  # end of the town dict
 
-
+def get_town_forecast(lat, lon):  # hourly sunshine on a flat surface for the next 3 days
+    """Return a list of {time, radiation}; [] if lat/lon are invalid; None if the API fails."""
+    try:  # lat/lon may come from anywhere, so they may not be numbers
+        lat = float(lat)  # accept 33.98 or "33.98"; None or "abc" raise an error
+        lon = float(lon)  # same for longitude
+    except (TypeError, ValueError):  # TypeError for None, ValueError for "abc"
+        return []  # not numbers -> invalid, no API call
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):  # valid ranges on Earth (Open-Meteo rejects others)
+        return []  # out of range -> invalid, no API call
+    params = {  # query parameters; requests URL-encodes them safely
+    "latitude": lat,  # the town's latitude
+    "longitude": lon,  # the town's longitude
+    "hourly": "shortwave_radiation",  # sunshine on a flat surface, W/m², average of the previous hour
+    "timezone": "Asia/Beirut",  # times in Lebanese time, not UTC
+    "forecast_days": 3,  # today + the next 2 days (72 hours)
+  }
+    try:  # code inside can fail because of the network or the API
+        response = requests.get(FORECAST_URL, params=params, timeout=TIMEOUT)  # send request, wait max 6 s
+        response.raise_for_status()  # turn HTTP errors (400, 500, ...) into an exception
+        data = response.json()  # convert the JSON text into a Python dict
+    except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
+        logger.warning("Forecast failed for %s,%s: %s", lat, lon, error)  # record the failure (no secrets)
+        return None  # None = the API failed
+    hourly = data.get("hourly", {})  # the hourly block ({} if missing, so no KeyError)
+    times = hourly.get("time", [])  # list of times, e.g. "2026-11-15T12:00"
+    values = hourly.get("shortwave_radiation", [])  # list of W/m², same order as times
+    hours = []  # our clean list, one dict per hour
+    for time, radiation in zip(times, values):  # pair item 0 with item 0, item 1 with item 1, ...
+        if radiation is None:  # the API had no value for this hour
+            continue  # skip it rather than invent a number
+        hours.append({"time": time, "radiation": radiation})  # one clean hour
+    return hours  # 72 hours normally; [] if the API sent no data
