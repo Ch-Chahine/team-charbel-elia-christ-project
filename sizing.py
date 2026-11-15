@@ -80,3 +80,10 @@ def battery_size(e_night, autonomy_days):  # battery big enough for the night lo
     needed = e_night * autonomy_days / (BATTERY_DOD * BATTERY_EFFICIENCY)  # e.g. 4 × 1 ÷ 0.72 = 5.56 kWh
     modules = math.ceil(needed / BATTERY_MODULE_KWH)  # 5.56 ÷ 5 = 1.11 -> 2 modules (always round UP)
     return {"battery_kwh": modules * BATTERY_MODULE_KWH, "battery_modules": modules}  # e.g. 10 kWh, 2 modules
+
+
+def architecture(has_grid):  # which type of system fits the house
+    """Return "hybrid" if the house has EDL or a generator, otherwise "off-grid"."""
+    # Rule (proposal): EDL/generator present -> hybrid inverter (mixes solar, battery and the grid/generator);
+    # none -> off-grid (solar + battery only). Pure on-grid is unsuitable in Lebanon because of power cuts.
+    return "hybrid" if has_grid else "off-grid"  # one line: a conditional expression
