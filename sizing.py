@@ -87,3 +87,22 @@ def architecture(has_grid):  # which type of system fits the house
     # Rule (proposal): EDL/generator present -> hybrid inverter (mixes solar, battery and the grid/generator);
     # none -> off-grid (solar + battery only). Pure on-grid is unsuitable in Lebanon because of power cuts.
     return "hybrid" if has_grid else "off-grid"  # one line: a conditional expression
+
+
+def suggest_system(e_day, e_night, peak_kw, psh_winter, autonomy_days, has_grid, panel_w=DEFAULT_PANEL_W):
+    """Return the full suggested system as one dict (see the contract shared with Christ)."""
+    kwp = panel_power(e_day, e_night, psh_winter)  # step 1: panel power needed (kWp)
+    panels = panels_needed(kwp, panel_w)  # step 2: whole panels, installed kWp, roof area
+    battery = battery_size(e_night, autonomy_days)  # step 3: battery for the night (+ backup days)
+    return {  # everything the result page shows, in one place
+        "kwp": kwp,  # panel power needed, e.g. 5.83
+        "panels": panels["panels"],  # number of panels, e.g. 11
+        "panel_w": panel_w,  # watts of one panel, e.g. 550
+        "installed_kwp": panels["installed_kwp"],  # real power of those panels, e.g. 6.05
+        "roof_m2": panels["roof_m2"],  # roof space, e.g. 28.6
+        "inverter_kw": inverter_size(peak_kw),  # step 4: standard inverter size, or None above 12 kW
+        "battery_kwh": battery["battery_kwh"],  # e.g. 10
+        "battery_modules": battery["battery_modules"],  # e.g. 2
+        "architecture": architecture(has_grid),  # step 5: "hybrid" or "off-grid"
+        "psh_winter": psh_winter,  # the winter sun value used, so the page can show it
+    }
