@@ -14,7 +14,7 @@ coordinates and forecasts are always fetched from the API.
 
 import logging  # built-in: write warning messages when the API fails
 import re  # built-in: regular expressions, to check allowed characters
-
+from datetime import date  # built-in: today's date, to know which year was "last year"
 import requests  # installed package: makes the HTTP calls to Open-Meteo
 
 logger = logging.getLogger(__name__)  # logger named "api_client"; shows in terminal + Render logs
@@ -24,6 +24,8 @@ TIMEOUT = 6  # seconds; give up instead of hanging if the API is slow
 GEOCODING_SEARCH_URL = "https://geocoding-api.open-meteo.com/v1/search"  # base URL of the town search; query goes in params
 GEOCODING_GET_URL = "https://geocoding-api.open-meteo.com/v1/get"  # one town by its id
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"  # weather forecast API (hourly sunshine)
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"  # past weather: one full year of daily sunshine
+DEFAULT_WINTER_SUN_HOURS = 2.5  # fallback peak sun hours if the archive fails (Jounieh's real Dec 2025 = 2.46)
 MAX_PLACE_ID = 2_147_483_647  # largest Int32 number; Open-Meteo rejects bigger ids
 MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
 MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
@@ -173,3 +175,45 @@ def get_forecast(lat, lon, tilt, azimuth, past_days=0):  # hourly sunshine on th
             continue  # skip it rather than invent a number
         hours.append({"time": time, "irradiance": sun, "temperature": temp})  # one clean hour
     return hours  # 72 hours (+ 24 per past day); [] if no data
+
+
+def get_winter_sun_hours(lat, lon):  # peak sun hours of the darkest month, for the planner
+    """Return the lowest monthly average of daily peak sun hours last year; DEFAULT_WINTER_SUN_HOURS if anything fails."""
+    try:  # lat/lon may come from anywhere, so convert them first
+        lat = float(lat)  # latitude in degrees
+        lon = float(lon)  # longitude in degrees
+    except (TypeError, ValueError):  # None or text that isn't a number
+        return DEFAULT_WINTER_SUN_HOURS  # the planner always needs a number
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):  # valid ranges on Earth
+        return DEFAULT_WINTER_SUN_HOURS  # invalid coordinates -> safe fallback, no API call
+    last_year = date.today().year - 1  # e.g. 2025 when today is 2026 (a complete year, with every month)
+    params = {  # query parameters; requests URL-encodes them safely
+        "latitude": lat,  # the town's latitude
+        "longitude": lon,  # the town's longitude
+        "start_date": f"{last_year}-01-01",  # 1 January of last year
+        "end_date": f"{last_year}-12-31",  # 31 December of last year
+        "daily": "shortwave_radiation_sum",  # total sunshine per day, in MJ/m²
+        "timezone": "Asia/Beirut",  # days counted in Lebanese time
+    }
+    try:  # code inside can fail because of the network or the API
+        response = requests.get(ARCHIVE_URL, params=params, timeout=TIMEOUT)  # send request, wait max 6 s
+        response.raise_for_status()  # turn HTTP errors (400, 500, ...) into an exception
+        data = response.json()  # convert the JSON text into a Python dict
+    except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
+        logger.warning("Winter sun hours failed for %s,%s: %s (using %s)", lat, lon, error, DEFAULT_WINTER_SUN_HOURS)
+        return DEFAULT_WINTER_SUN_HOURS  # fallback so the planner still works
+    daily = data.get("daily", {})  # the daily block ({} if missing)
+    months = {}  # "2025-01" -> list of that month's daily peak sun hours
+    for day, mj in zip(daily.get("time", []), daily.get("shortwave_radiation_sum", [])):  # walk days and values together
+        if mj is None:  # no value for this day
+            continue  # skip it rather than invent a number
+        month = day[:7]  # "2025-01-15"[:7] -> "2025-01"
+        if month not in months:  # first day we see for this month
+            months[month] = []  # start its list
+        # Conversion: 1 kWh = 3.6 MJ, so MJ/m² ÷ 3.6 = kWh/m² = peak sun hours for that day
+        months[month].append(mj / 3.6)  # add this day's peak sun hours
+    if not months:  # the API answered but sent no usable data
+        logger.warning("Winter sun hours: no data for %s,%s (using %s)", lat, lon, DEFAULT_WINTER_SUN_HOURS)
+        return DEFAULT_WINTER_SUN_HOURS  # fallback
+    averages = [sum(values) / len(values) for values in months.values()]  # one average per month
+    return round(min(averages), 2)  # the darkest month's average, e.g. 2.46
