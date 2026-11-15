@@ -5,6 +5,8 @@ Pure maths: no API calls and no database. The route passes the user's
 appliances (as dicts) and the winter peak sun hours from api_client.
 Every result is an ESTIMATE to confirm with a certified installer.
 """
+import math  # built-in: math.ceil rounds UP (you can't buy part of a panel)
+
 
 PERFORMANCE_RATIO = 0.8  # real panels give ~80% of their rating (heat, wiring, inverter losses)
 DEFAULT_PANEL_W = 550  # watts of one typical panel sold in Lebanon
@@ -32,3 +34,25 @@ def load_summary(appliances):  # how much energy the house needs
         "e_night": round(e_night, 2),  # kWh per night
         "peak_kw": round(peak_w / 1000, 2),  # kW if everything runs at once
     }    
+
+
+def panel_power(e_day, e_night, psh_winter):  # size of the panel array needed (kWp)
+    """Return the panel power in kWp so the panels cover the day AND refill the battery for the night."""
+    if psh_winter <= 0:  # no usable sun value -> avoid dividing by zero
+        return 0.0  # nothing sensible to suggest
+    # Formula: kWp = (E + E_night) ÷ (PSH_winter × PR)
+    # - E + E_night: all energy used in 24 h comes from the panels (directly by day, via the battery at night)
+    # - PSH_winter: peak sun hours of the darkest month, so the system is enough all year
+    # - PR = 0.8: real panels give about 80% of their rating
+    return round((e_day + e_night) / (psh_winter * PERFORMANCE_RATIO), 2)  # kWp, 2 decimals
+
+
+def panels_needed(kwp, panel_w=DEFAULT_PANEL_W):  # turn kWp into whole panels
+    """Return {panels, installed_kwp, roof_m2} for the needed kWp and one panel's watts."""
+    if kwp <= 0 or panel_w <= 0:  # nothing needed, or an impossible panel size
+        return {"panels": 0, "installed_kwp": 0.0, "roof_m2": 0.0}  # empty suggestion, no crash
+    # Formula: panels = ceil(kWp × 1000 ÷ panel_W)  (kW -> W, then divide by one panel; always round UP)
+    panels = math.ceil(kwp * 1000 / panel_w)  # e.g. 5830 W ÷ 550 W = 10.6 -> 11 panels
+    installed_kwp = round(panels * panel_w / 1000, 2)  # the real power of those panels, e.g. 11 × 550 W = 6.05 kWp
+    roof_m2 = round(panels * PANEL_AREA_M2, 1)  # roof space: about 2.6 m² per panel
+    return {"panels": panels, "installed_kwp": installed_kwp, "roof_m2": roof_m2}  # what the page shows
