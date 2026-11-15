@@ -7,14 +7,28 @@ Geocoding (towns in Lebanon):
     get_town(place_id)  -> one {id, name, region, district, lat, lon};
                            {} if the id is invalid, unknown or not in Lebanon; None if the API fails
 
+Forecast (next 3 days, Beirut time):
+    get_town_forecast(lat, lon)  -> list of {time, radiation} on a flat surface (W/m²)
+    get_forecast(lat, lon, tilt, azimuth, past_days=0)
+                                 -> list of {time, irradiance, temperature} on tilted panels
+    Both: [] if inputs are invalid; None if the API fails.
+
+Planner:
+    get_winter_sun_hours(lat, lon) -> darkest month's average peak sun hours of last year
+                                      (MJ/m² ÷ 3.6); DEFAULT_WINTER_SUN_HOURS if anything fails
+
 Every call validates its input first, uses a timeout, catches network errors,
-and logs failures (never secrets). Our database stores only place_id; names,
-coordinates and forecasts are always fetched from the API.
+and logs failures (never secrets). Successful answers are cached in memory
+(towns and winter sun hours 24 h, forecasts 30 min); failures are never cached.
+Our database stores only place_id; names, coordinates and forecasts are always
+fetched from the API.
 """
 
 import logging  # built-in: write warning messages when the API fails
 import re  # built-in: regular expressions, to check allowed characters
+import time  # built-in: current time in seconds, to know when a cache entry expires
 from datetime import date  # built-in: today's date, to know which year was "last year"
+
 import requests  # installed package: makes the HTTP calls to Open-Meteo
 
 logger = logging.getLogger(__name__)  # logger named "api_client"; shows in terminal + Render logs
@@ -29,7 +43,30 @@ DEFAULT_WINTER_SUN_HOURS = 2.5  # fallback peak sun hours if the archive fails (
 MAX_PLACE_ID = 2_147_483_647  # largest Int32 number; Open-Meteo rejects bigger ids
 MIN_SEARCH_LENGTH = 2  # shortest search allowed; Open-Meteo returns nothing for 1 character
 MAX_SEARCH_LENGTH = 60  # longest search allowed; blocks huge inputs
-TOWN_NAME_PATTERN = re.compile(r"^[A-Za-zÀ-ÿ\u0600-\u06FF .'-]+$")  # whole text: letters, space . ' - only
+TOWN_NAME_PATTERN = re.compile(r"^[A-Za-zÀ-ÿ؀-ۿ .'-]+$")  # whole text: letters, space . ' - only
+CACHE_MAX_ITEMS = 500  # safety limit so the cache can't grow forever (search keys come from users)
+TOWN_CACHE_SECONDS = 24 * 60 * 60  # towns and winter sun hours: 24 hours (they almost never change)
+FORECAST_CACHE_SECONDS = 30 * 60  # forecasts: 30 minutes (Open-Meteo updates them during the day)
+_cache = {}  # key -> (expires_at, value); kept in memory, one cache per server process
+
+
+def _cache_get(key):  # look up a remembered answer
+    """Return the cached value for key, or None if it is missing or expired."""
+    entry = _cache.get(key)  # (expires_at, value) or None if never stored
+    if entry is None:  # nothing remembered for this key
+        return None  # caller must call the API
+    expires_at, value = entry  # unpack the pair
+    if time.time() > expires_at:  # too old
+        del _cache[key]  # forget it
+        return None  # caller must call the API again
+    return value  # still fresh -> use it, no API call
+
+
+def _cache_set(key, value, seconds):  # remember an answer for a while
+    """Store value under key for the given number of seconds."""
+    if len(_cache) >= CACHE_MAX_ITEMS:  # cache is full
+        _cache.clear()  # simplest safe option: start empty again
+    _cache[key] = (time.time() + seconds, value)  # remember the value and when it expires
 
 
 def search_towns(name):  # find towns in Lebanon whose name matches what the user typed
@@ -41,6 +78,10 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
         return []  # too short or too long -> no API call
     if not TOWN_NAME_PATTERN.match(name):  # only letters, space . ' - are allowed
         return []  # forbidden characters -> no API call
+    cache_key = ("search", name.lower())  # label for this question; lower() so "Jounieh" and "jounieh" share it
+    cached = _cache_get(cache_key)  # already asked recently?
+    if cached is not None:  # yes, and still fresh ([] counts too: "no towns" is a valid answer)
+        return cached  # answer from memory, no API call
     params = {  # query parameters; requests URL-encodes them safely
         "name": name,  # the cleaned text the user typed
         "countryCode": "LB",  # only towns in Lebanon
@@ -54,7 +95,7 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
         data = response.json()  # convert the JSON text into a Python dict
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("Town search failed for %r: %s", name, error)  # record the failure (no secrets)
-        return None  # None = the API failed (decision A)
+        return None  # None = the API failed (decision A), never cached
 
     towns = []  # empty list that we fill with clean towns
     for place in data.get("results", []):  # loop over each raw town ([] if the key is missing)
@@ -68,6 +109,7 @@ def search_towns(name):  # find towns in Lebanon whose name matches what the use
             "lat": place.get("latitude"),  # latitude in degrees
             "lon": place.get("longitude"),  # longitude in degrees
         })  # end of the dict and of append(...)
+    _cache_set(cache_key, towns, TOWN_CACHE_SECONDS)  # remember the result for 24 h (after the loop, once)
     return towns  # [] if nothing matched, otherwise our clean towns
 
 
@@ -79,6 +121,10 @@ def get_town(place_id):  # get one town's details from its Open-Meteo id
         return {}  # not a whole number -> no such town, no API call
     if not (1 <= place_id <= MAX_PLACE_ID):  # must be positive and fit in Int32
         return {}  # 0, negative or too big -> no such town, no API call
+    cache_key = ("town", place_id)  # label for this question, e.g. ("town", 273140)
+    cached = _cache_get(cache_key)  # already looked up recently?
+    if cached is not None:  # yes, and still fresh
+        return cached  # answer from memory, no API call
     try:  # code inside can fail because of the network or the API
         response = requests.get(GEOCODING_GET_URL, params={"id": place_id}, timeout=TIMEOUT)  # ask for one town, wait max 6 s
         if response.status_code in (400, 404):  # Open-Meteo answers "Location ID not found" with an error status
@@ -87,10 +133,10 @@ def get_town(place_id):  # get one town's details from its Open-Meteo id
         place = response.json()  # convert the JSON text into a Python dict (the town itself, no "results")
     except requests.RequestException as error:  # timeout, no internet, server error or invalid JSON
         logger.warning("Town lookup failed for id %s: %s", place_id, error)  # record the failure (no secrets)
-        return None  # None = the API failed (decision B)
+        return None  # None = the API failed (decision B), never cached
     if place.get("country_code") != "LB":  # only towns in Lebanon (someone could type another country's id in the URL)
         return {}  # outside Lebanon -> no such town for our app
-    return {  # our clean town dict, same field names as search_towns
+    town = {  # our clean town dict, same field names as search_towns
         "id": place.get("id"),  # Open-Meteo place id
         "name": place.get("name", ""),  # town name, e.g. "Jounieh"
         "region": place.get("admin1", ""),  # governorate, e.g. "Mount Lebanon"
@@ -98,6 +144,8 @@ def get_town(place_id):  # get one town's details from its Open-Meteo id
         "lat": place.get("latitude"),  # latitude in degrees
         "lon": place.get("longitude"),  # longitude in degrees
     }  # end of the town dict
+    _cache_set(cache_key, town, TOWN_CACHE_SECONDS)  # remember this town for 24 h
+    return town  # the clean town
 
 
 def get_town_forecast(lat, lon):  # hourly sunshine on a flat surface for the next 3 days
@@ -109,12 +157,16 @@ def get_town_forecast(lat, lon):  # hourly sunshine on a flat surface for the ne
         return []  # not numbers -> invalid, no API call
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):  # valid ranges on Earth (Open-Meteo rejects others)
         return []  # out of range -> invalid, no API call
+    cache_key = ("town_forecast", round(lat, 4), round(lon, 4))  # label for this question (4 decimals ≈ 11 m)
+    cached = _cache_get(cache_key)  # already fetched in the last 30 minutes?
+    if cached is not None:  # yes, and still fresh
+        return cached  # answer from memory, no API call
     params = {  # query parameters; requests URL-encodes them safely
-    "latitude": lat,  # the town's latitude
-    "longitude": lon,  # the town's longitude
-    "hourly": "shortwave_radiation",  # sunshine on a flat surface, W/m², average of the previous hour
-    "timezone": "Asia/Beirut",  # times in Lebanese time, not UTC
-    "forecast_days": 3,  # today + the next 2 days (72 hours)
+        "latitude": lat,  # the town's latitude
+        "longitude": lon,  # the town's longitude
+        "hourly": "shortwave_radiation",  # sunshine on a flat surface, W/m², average of the previous hour
+        "timezone": "Asia/Beirut",  # times in Lebanese time, not UTC
+        "forecast_days": 3,  # today + the next 2 days (72 hours)
     }
     try:  # code inside can fail because of the network or the API
         response = requests.get(FORECAST_URL, params=params, timeout=TIMEOUT)  # send request, wait max 6 s
@@ -122,15 +174,16 @@ def get_town_forecast(lat, lon):  # hourly sunshine on a flat surface for the ne
         data = response.json()  # convert the JSON text into a Python dict
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("Forecast failed for %s,%s: %s", lat, lon, error)  # record the failure (no secrets)
-        return None  # None = the API failed
+        return None  # None = the API failed, never cached
     hourly = data.get("hourly", {})  # the hourly block ({} if missing, so no KeyError)
     times = hourly.get("time", [])  # list of times, e.g. "2026-11-15T12:00"
     values = hourly.get("shortwave_radiation", [])  # list of W/m², same order as times
     hours = []  # our clean list, one dict per hour
-    for time, radiation in zip(times, values):  # pair item 0 with item 0, item 1 with item 1, ...
+    for when, radiation in zip(times, values):  # pair item 0 with item 0, item 1 with item 1, ...
         if radiation is None:  # the API had no value for this hour
             continue  # skip it rather than invent a number
-        hours.append({"time": time, "radiation": radiation})  # one clean hour
+        hours.append({"time": when, "radiation": radiation})  # one clean hour
+    _cache_set(cache_key, hours, FORECAST_CACHE_SECONDS)  # remember the forecast for 30 minutes
     return hours  # 72 hours normally; [] if the API sent no data
 
 
@@ -148,6 +201,10 @@ def get_forecast(lat, lon, tilt, azimuth, past_days=0):  # hourly sunshine on th
         return []  # invalid coordinates -> no API call
     if not (0 <= tilt <= 90 and -180 <= azimuth <= 180 and 0 <= past_days <= 7):  # same ranges as Elia's validators
         return []  # invalid panel settings -> no API call
+    cache_key = ("forecast", round(lat, 4), round(lon, 4), tilt, azimuth, past_days)  # every input changes the answer
+    cached = _cache_get(cache_key)  # already fetched in the last 30 minutes?
+    if cached is not None:  # yes, and still fresh
+        return cached  # answer from memory, no API call
     params = {  # query parameters; requests URL-encodes them safely
         "latitude": lat,  # the system's town latitude
         "longitude": lon,  # the system's town longitude
@@ -164,16 +221,17 @@ def get_forecast(lat, lon, tilt, azimuth, past_days=0):  # hourly sunshine on th
         data = response.json()  # convert the JSON text into a Python dict
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("System forecast failed for %s,%s: %s", lat, lon, error)  # record the failure (no secrets)
-        return None  # None = the API failed
+        return None  # None = the API failed, never cached
     hourly = data.get("hourly", {})  # the hourly block ({} if missing)
     times = hourly.get("time", [])  # list of times
     irradiance = hourly.get("global_tilted_irradiance", [])  # W/m² on the panel, same order as times
     temperature = hourly.get("temperature_2m", [])  # °C, same order as times
     hours = []  # our clean list, one dict per hour
-    for time, sun, temp in zip(times, irradiance, temperature):  # walk the three lists together
+    for when, sun, temp in zip(times, irradiance, temperature):  # walk the three lists together
         if sun is None:  # the API had no sunshine value for this hour
             continue  # skip it rather than invent a number
-        hours.append({"time": time, "irradiance": sun, "temperature": temp})  # one clean hour
+        hours.append({"time": when, "irradiance": sun, "temperature": temp})  # one clean hour
+    _cache_set(cache_key, hours, FORECAST_CACHE_SECONDS)  # remember the forecast for 30 minutes
     return hours  # 72 hours (+ 24 per past day); [] if no data
 
 
@@ -187,6 +245,10 @@ def get_winter_sun_hours(lat, lon):  # peak sun hours of the darkest month, for 
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):  # valid ranges on Earth
         return DEFAULT_WINTER_SUN_HOURS  # invalid coordinates -> safe fallback, no API call
     last_year = date.today().year - 1  # e.g. 2025 when today is 2026 (a complete year, with every month)
+    cache_key = ("winter_sun", round(lat, 4), round(lon, 4), last_year)  # last year is part of the question
+    cached = _cache_get(cache_key)  # already computed in the last 24 hours?
+    if cached is not None:  # yes, and still fresh
+        return cached  # answer from memory, no API call
     params = {  # query parameters; requests URL-encodes them safely
         "latitude": lat,  # the town's latitude
         "longitude": lon,  # the town's longitude
@@ -201,7 +263,7 @@ def get_winter_sun_hours(lat, lon):  # peak sun hours of the darkest month, for 
         data = response.json()  # convert the JSON text into a Python dict
     except requests.RequestException as error:  # timeout, no internet, HTTP error or invalid JSON
         logger.warning("Winter sun hours failed for %s,%s: %s (using %s)", lat, lon, error, DEFAULT_WINTER_SUN_HOURS)
-        return DEFAULT_WINTER_SUN_HOURS  # fallback so the planner still works
+        return DEFAULT_WINTER_SUN_HOURS  # fallback so the planner still works (not cached)
     daily = data.get("daily", {})  # the daily block ({} if missing)
     months = {}  # "2025-01" -> list of that month's daily peak sun hours
     for day, mj in zip(daily.get("time", []), daily.get("shortwave_radiation_sum", [])):  # walk days and values together
@@ -214,6 +276,8 @@ def get_winter_sun_hours(lat, lon):  # peak sun hours of the darkest month, for 
         months[month].append(mj / 3.6)  # add this day's peak sun hours
     if not months:  # the API answered but sent no usable data
         logger.warning("Winter sun hours: no data for %s,%s (using %s)", lat, lon, DEFAULT_WINTER_SUN_HOURS)
-        return DEFAULT_WINTER_SUN_HOURS  # fallback
+        return DEFAULT_WINTER_SUN_HOURS  # fallback (not cached)
     averages = [sum(values) / len(values) for values in months.values()]  # one average per month
-    return round(min(averages), 2)  # the darkest month's average, e.g. 2.46
+    winter = round(min(averages), 2)  # the darkest month's average, e.g. 2.46
+    _cache_set(cache_key, winter, TOWN_CACHE_SECONDS)  # remember it for 24 h (real values only, never the fallback)
+    return winter  # peak sun hours for sizing
