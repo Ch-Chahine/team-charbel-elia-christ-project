@@ -32,3 +32,88 @@ h1 { color:var(--navy); }
 .auth label { display:flex; flex-direction:column; font-weight:600; margin-top:.6rem; }
 .auth input { padding:.55rem .7rem; border:1px solid var(--line); border-radius:8px; font-size:1rem; }
 .auth button { margin-top:1rem; }
+
+.page {
+  width: min(100% - 2rem, 68rem);
+  margin-inline: auto;
+  padding-block: 2rem;
+}
+
+.narrow-page {
+  max-width: 42rem;
+}
+
+.page-heading,
+.card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.card,
+.form-card,
+.empty-state {
+  padding: 1.25rem;
+  border: 1px solid #d4ddd8;
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.form-card {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.form-card input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #66736d;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+
+.button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #145c43;
+  color: #fff;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-danger {
+  background: #8c2e2e;
+}
+
+.button:hover {
+  filter: brightness(0.92);
+}
+
+:focus-visible {
+  outline: 3px solid #e19b22;
+  outline-offset: 3px;
+}
+
+@media (max-width: 38rem) {
+  .page-heading,
+  .card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

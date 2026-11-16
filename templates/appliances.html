@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}My appliances{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-heading">
+    <div>
+      <h1>My appliances</h1>
+      <p>Add the appliances you use so the planner can estimate your household load.</p>
+    </div>
+    <a class="button" href="{{ url_for('appliance_new') }}">Add appliance</a>
+  </div>
+
+  {% if appliances %}
+    <div class="card-grid">
+      {% for appliance in appliances %}
+        <article class="card">
+          <h2>{{ appliance.name }}</h2>
+          <p>{{ appliance.power_w }} W · Quantity: {{ appliance.quantity }}</p>
+          <p>{{ appliance.hours_day }} day hours · {{ appliance.hours_night }} night hours</p>
+
+          <div class="card-actions">
+            <a href="{{ url_for('appliance_edit', appliance_id=appliance.id) }}">Edit</a>
+            <form method="post"
+                  action="{{ url_for('appliance_delete', appliance_id=appliance.id) }}">
+              {# Add the CSRF token field once Elia enables Flask-WTF CSRF protection. #}
+              <button class="button button-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="empty-state">
+      <h2>No appliances yet</h2>
+      <p>Add your first appliance to start preparing your planner inputs.</p>
+      <a class="button" href="{{ url_for('appliance_new') }}">Add your first appliance</a>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
