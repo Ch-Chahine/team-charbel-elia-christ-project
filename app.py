@@ -14,7 +14,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort)
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from models import db, User, Favorite
+from models import db, User, Favorite, Appliance
 import api_client
 import solar  # our calculations (daily sunshine summary)
 from validators import validate_signup, validate_login, validate_search
@@ -174,6 +174,147 @@ def favorites_remove():
         db.session.commit()
         flash("Removed from favorites.")
     return redirect(request.form.get("next") or url_for("favorites"))
+
+# ---------- appliances (login required) ---------------------------
+
+def validate_appliance_form(form):
+    """Validate and clean appliance fields from a submitted form."""
+    name = form.get("name", "").strip()
+
+    try:
+        power_w = int(form.get("power_w", ""))
+        quantity = int(form.get("quantity", ""))
+        hours_day = float(form.get("hours_day", ""))
+        hours_night = float(form.get("hours_night", ""))
+    except (TypeError, ValueError):
+        return None, "Enter valid numbers for power, quantity, and hours."
+
+    if not 1 <= len(name) <= 40:
+        return None, "Name must be between 1 and 40 characters."
+    if not 1 <= power_w <= 10000:
+        return None, "Power must be between 1 and 10,000 W."
+    if not 1 <= quantity <= 50:
+        return None, "Quantity must be between 1 and 50."
+    if not 0 <= hours_day <= 24 or not 0 <= hours_night <= 24:
+        return None, "Each hours value must be between 0 and 24."
+    if hours_day + hours_night > 24:
+        return None, "Day and night hours cannot add up to more than 24."
+
+    return {
+        "name": name,
+        "power_w": power_w,
+        "quantity": quantity,
+        "hours_day": hours_day,
+        "hours_night": hours_night,
+    }, None
+
+
+@app.route("/appliances")
+@login_required
+def appliances():
+    items = (
+        Appliance.query
+        .filter_by(user_id=session["user_id"])
+        .order_by(Appliance.name)
+        .all()
+    )
+    return render_template("appliances.html", appliances=items)
+
+
+@app.route("/appliances/new", methods=["GET", "POST"])
+@login_required
+def appliance_new():
+    if request.method == "POST":
+        values, error = validate_appliance_form(request.form)
+
+        if error:
+            flash(error, "error")
+            return render_template(
+                "appliance_form.html", appliance=None, form_data=request.form
+            ), 400
+
+        appliance = Appliance(user_id=session["user_id"], **values)
+        db.session.add(appliance)
+
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Could not save appliance")
+            flash("Could not save the appliance. Please try again.", "error")
+            return render_template(
+                "appliance_form.html", appliance=None, form_data=request.form
+            ), 500
+
+        flash("Appliance added.", "success")
+        return redirect(url_for("appliances"))
+
+    return render_template(
+        "appliance_form.html", appliance=None, form_data={}
+    )
+
+
+@app.route("/appliances/<int:appliance_id>/edit", methods=["GET", "POST"])
+@login_required
+def appliance_edit(appliance_id):
+    appliance = db.session.get(Appliance, appliance_id)
+
+    if appliance is None:
+        abort(404)
+    if appliance.user_id != session["user_id"]:
+        abort(403)
+
+    if request.method == "POST":
+        values, error = validate_appliance_form(request.form)
+
+        if error:
+            flash(error, "error")
+            return render_template(
+                "appliance_form.html", appliance=appliance, form_data=request.form
+            ), 400
+
+        for field, value in values.items():
+            setattr(appliance, field, value)
+
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Could not update appliance")
+            flash("Could not update the appliance. Please try again.", "error")
+            return render_template(
+                "appliance_form.html", appliance=appliance, form_data=request.form
+            ), 500
+
+        flash("Appliance updated.", "success")
+        return redirect(url_for("appliances"))
+
+    return render_template(
+        "appliance_form.html", appliance=appliance, form_data={}
+    )
+
+
+@app.route("/appliances/<int:appliance_id>/delete", methods=["POST"])
+@login_required
+def appliance_delete(appliance_id):
+    appliance = db.session.get(Appliance, appliance_id)
+
+    if appliance is None:
+        abort(404)
+    if appliance.user_id != session["user_id"]:
+        abort(403)
+
+    try:
+        db.session.delete(appliance)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Could not delete appliance")
+        flash("Could not delete the appliance. Please try again.", "error")
+    else:
+        flash("Appliance deleted.", "success")
+
+    return redirect(url_for("appliances"))
 
 
 if __name__ == "__main__":
