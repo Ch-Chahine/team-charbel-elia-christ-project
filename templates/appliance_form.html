@@ -5,7 +5,7 @@
 {% endblock %}
 
 {% block content %}
-<main class="page narrow-page">
+<div class="page narrow-page">
   <h1>{% if appliance %}Edit appliance{% else %}Add an appliance{% endif %}</h1>
   <p>Enter typical use for this appliance.</p>
 
@@ -39,5 +39,5 @@
     <button class="button" type="submit">Save appliance</button>
     <a href="{{ url_for('appliances') }}">Cancel</a>
   </form>
-</main>
+</div>
 {% endblock %}
