@@ -23,6 +23,23 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
 
+EXAMPLE_KW = 3          # example system size: 3 kW, a typical Lebanese home system
+EXAMPLE_TILT = 30       # panels tilted 30°, close to the best angle for Lebanon's latitude
+EXAMPLE_AZIMUTH = 0     # 0 = facing south in Open-Meteo (-90 east, 90 west)
+
+
+def example_system(lat, lon):
+    """Run a fixed 3 kW system through the solar functions for one town."""
+    forecast = api_client.get_forecast(lat, lon, EXAMPLE_TILT, EXAMPLE_AZIMUTH)  # hourly tilted irradiance for 3 days
+    if forecast is None:  # None = the API failed (our api_client contract)
+        return None  # tell the route to show an error message
+    hourly = solar.hourly_kwh(forecast, EXAMPLE_KW)  # kWh produced each hour
+    daily = solar.daily_kwh(hourly)  # total kWh per day
+    best = solar.best_day(daily)  # the day with the most production (or None)
+    window = solar.best_window(hourly, best["date"]) if best else None  # best 4 hours of that day
+    return {"kw": EXAMPLE_KW, "daily": daily, "best_day": best, "best_window": window}  # one dict for the template
+
+
 def database_uri():
     """PostgreSQL on Render (DATABASE_URL), else a local SQLite file."""
     url = os.environ.get("DATABASE_URL")
