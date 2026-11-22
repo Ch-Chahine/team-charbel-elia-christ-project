@@ -57,3 +57,11 @@ def best_window(hourly, date, hours=4):  # best block of consecutive hours on on
     last = day[best_start + hours - 1]["time"]  # e.g. "2026-11-22T14:00"
     start_hour = int(first[11:13]) - 1  # values are averages of the PREVIOUS hour, so "11:00" covers 10:00–11:00
     return {"date": date, "start": f"{start_hour:02d}:00", "end": last[11:16], "kwh": round(best_total, 2)}
+
+def daily_kwh(hourly):  # add up the system's hourly kWh per day
+    """Return [{date, kwh}] in date order from hourly_kwh's list."""
+    days = {}  # "2026-11-22" -> total kWh so far that day
+    for hour in hourly:  # each {"time": "2026-11-22T13:00", "kwh": 1.833}
+        date = hour["time"][:10]  # first 10 characters = the date, "2026-11-22"
+        days[date] = days.get(date, 0.0) + hour["kwh"]  # add this hour to its day's total (start at 0)
+    return [{"date": date, "kwh": round(total, 2)} for date, total in days.items()]  # one dict per day, 2 decimals
