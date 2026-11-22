@@ -38,6 +38,40 @@
         <p role="status">No forecast data for this town.</p>
       {% endif %}
     </section>
+
+    {# NEW: the example system #}
+    <section aria-labelledby="example-title">  {# labelled section, same pattern as the forecast #}
+      <h2 id="example-title">Example: a 3 kW system here</h2>  {# section heading #}
+      {% if example is none %}  {# example_system returned None: the API failed #}
+        <p class="error" role="alert">The system estimate is not available right now. Please try again in a minute.</p>
+      {% elif example.daily %}  {# we have daily production from solar.daily_kwh #}
+        {% if example.best_day %}  {# only if a best day exists #}
+          <p>Best day: <strong>{{ example.best_day.date }}</strong> with {{ example.best_day.kwh }} kWh.</p>  {# from solar.best_day #}
+        {% endif %}
+        {% if example.best_window %}  {# only if a best window exists #}
+          <p>Best time to run heavy appliances: <strong>{{ example.best_window.start }}–{{ example.best_window.end }}</strong> ({{ example.best_window.kwh }} kWh).</p>  {# from solar.best_window #}
+        {% endif %}
+        <table>  {# kWh per day #}
+          <caption>Estimated production of a {{ example.kw }} kW system (tilt 30°, facing south)</caption>  {# describes the table #}
+          <thead>
+            <tr>
+              <th scope="col">Day</th>  {# column header #}
+              <th scope="col">Production (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for day in example.daily %}  {# one row per day #}
+              <tr>
+                <th scope="row">{{ day.date }}</th>  {# the date labels its row #}
+                <td>{{ day.kwh }}</td>  {# e.g. 11.27 #}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}  {# no error, but no data either #}
+        <p role="status">No production data for this town.</p>
+      {% endif %}
+    </section>
   </article>
 {% endif %}
 <p><a href="{{ url_for('home') }}">New search</a></p>  {# link back to the search box #}
