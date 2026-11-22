@@ -110,9 +110,10 @@ def town(place_id):  # show one town and its 3-day sunshine forecast
         abort(404)  # standard "page not found"
     hours = api_client.get_town_forecast(data["lat"], data["lon"])  # hourly sunshine, [] (invalid) or None (API failed)
     forecast = solar.daily_sunshine(hours) if hours else []  # one summary per day; [] if no hours
+    example = example_system(data["lat"], data["lon"])  # 3 kW example: daily kWh, best day, best window (None if API failed)
     return render_template("town.html", town=data, api_failed=False,  # show the town
-                           forecast=forecast, forecast_failed=hours is None)  # + forecast, or a "forecast unavailable" flag
-
+        forecast=forecast, forecast_failed=hours is None,  # + forecast, or a "forecast unavailable" flag
+        example=example)  # + the 3 kW example system (None if the API failed)
 
 # ===================================================================
 # AUTHENTICATION  --  YOU BUILD THIS (sign-up, log-in, log-out, sessions)
