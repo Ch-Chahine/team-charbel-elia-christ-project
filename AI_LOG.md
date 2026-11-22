@@ -63,3 +63,57 @@
 - **Question I raised:** should 1 character be enough, like on many websites?
 - **Checked:** Open-Meteo's documentation says 0–1 characters return nothing, 2 return exact matches only, 3+ fuzzy matches; confirmed in the browser (`name=Z` → no results, `name=Zah` → Zahle…).
 - **My decision:** keep the minimum at 2, so users get a clear message instead of a misleading "no towns found". Changing it later is one constant (`MIN_SEARCH_LENGTH`), shared by `api_client.py` and `validators.py`.
+
+## 14 Nov 2026 — Home page
+- **Asked:** how to make the home search box accessible.
+- **Used:** a real `<label for="q">`, `role="search"`, a hint linked with `aria-describedby`, and `minlength`/`maxlength`/`required` on the input.
+- **My understanding/decision:** the browser checks are only a convenience; the server checks (`validate_search` + `search_towns`) are the real protection (Week 11: never trust the client).
+- **Tested:** clicking the label focuses the box; typing "J" is blocked by the browser; typing `/search?q=J` directly in the address bar shows the server's message.
+
+## 14 Nov 2026 — Removing the starter's sample code
+- **Asked:** what to delete safely.
+- **Used:** removed `_SAMPLE`, `search()`, `get_item()`, the `/item` route and `detail.html`; changed one link in `favorites.html` to `url_for('town', ...)` so it doesn't break (Elia will remove Favorite later).
+- **Tested:** `hasattr(api_client, 'get_item')` → False; `/item/1` → 404; home, search and town pages still work. A real network slowdown showed the 503 "service not responding" page; a refresh worked.
+
+## 14 Nov 2026 — First pull request and team workflow
+- **Asked:** how teammates see each other's branches and how to merge safely.
+- **Done:** turned on branch protection on `main` (PR + 1 approval). Opened PR #2 with a description (what / contract / security / tests). Elia approved and merged it (bd6aeb7).
+- **Problem found:** the live site didn't change — Render's Auto-Deploy was off. Did a Manual Deploy → the live site showed real Open-Meteo data.
+- **Reviewed Elia's PR #3 (models.py):** checked that `place_id` is an Integer and that the azimuth convention matches Open-Meteo; pointed out that Render's existing tables won't get the new columns (`create_all` doesn't alter tables). Approved and merged it (f559bd6).
+
+## 15 Nov 2026 — Town forecast (`get_town_forecast`)
+- **Asked:** how to show a 3-day sunshine forecast on the town page.
+- **Tested in the browser first:** the forecast JSON has two parallel lists (`time`, `shortwave_radiation`), 72 values, unit W/m², GMT+2; coordinates are snapped to Open-Meteo's grid; `latitude=999` returns an error JSON.
+- **My decisions:** same contract as search — a list on success, `[]` for invalid lat/lon, `None` if the API fails; pair the two lists with `zip`; skip `null` hours instead of inventing a value.
+- **Debugging:** fixed two indentation bugs where code ended up inside an `if` after a `return`/`abort` and never ran (`NameError`).
+- **Tested:** invalid inputs → `[]`; Jounieh → 72 hours; Wi-Fi off → warning + `None`.
+
+## 15 Nov 2026 — Daily sunshine (`solar.daily_sunshine`) and the town page table
+- **Formula:** each hourly value is an average in W/m², so it equals Wh/m² for that hour; daily kWh/m² = sum of the hourly values ÷ 1000 (same idea as "peak sun hours").
+- **Tested by hand:** 500 + 600 W/m² → 1.1 kWh/m², peak at 12:00. Jounieh on the page: 3.2 / 2.99 / 2.73 kWh/m² for 15–17 Nov.
+- **Page:** a real `<table>` with `<caption>` and `<th scope>`, plus error and empty states. PR #4, merged by Elia.
+
+## 15 Nov 2026 — Tilted-panel forecast (`get_forecast`)
+- **Tested in the browser first:** with tilt 30° facing south, 763.8 W/m² at 13:00 vs 539 W/m² on a flat surface (~42% more in November, because the winter sun is low).
+- **Validation:** tilt 0–90, azimuth −180..180, past_days 0–7 (same ranges as the proposal).
+- **Tested:** 72 hours; `past_days=7` → 240 hours; tilt 120 → `[]`. An accidental offline run → warning + `None` (the logged URL showed `params` encoding commas and slashes).
+
+## 15 Nov 2026 — Winter sun hours (`get_winter_sun_hours`)
+- **Tested in the browser first:** the archive API returned 365 days of `shortwave_radiation_sum` in MJ/m², no missing values.
+- **Calculated by hand from that data:** monthly peak sun hours (MJ/m² ÷ 3.6) — best June 7.97, worst December 2.46.
+- **My decision:** changed the fallback from the proposal's 3.0 to 2.5, because real December data (2.46) showed 3.0 would undersize systems by about 20% when the API is down. The function always returns a number (the planner needs one), and failures are logged.
+- **Tested:** Jounieh → 2.46 (matches my manual calculation); invalid input → 2.5. The first run hit a real connect timeout → logged + 2.5; a direct request seconds later took 0.4 s, so it was a network hiccup.
+
+## 15 Nov 2026 — Caching
+- **Asked:** how to avoid calling Open-Meteo again for the same question.
+- **Used:** an in-memory dict with expiry times (`_cache_get` / `_cache_set`): towns and winter sun hours 24 h, forecasts 30 min, maximum 500 entries.
+- **My rules:** never cache failures or the fallback value; an empty result (`[]`) is a valid answer and is cached.
+- **Bugs found during AI review and fixed:** `_cache_set` was inside the `for` loop (saved once per town, never saved `[]`); `get_town` returned before saving to the cache; a loop variable named `time` hid the `time` module (renamed to `when`).
+- **Tested:** `get_town` first call 1.2–5.8 s (slow network), second call 0.0 s; "Jounieh" then "JOUNIEH" share one cache entry.
+
+## 15 Nov 2026 — Planner maths (`sizing.py`)
+- **Asked:** how to turn the proposal's formula table into code, step by step, testing each function alone.
+- **Used:** `load_summary`, `panel_power`, `panels_needed`, `inverter_size`, `battery_size`, `architecture`, `suggest_system`; every constant named and commented.
+- **My decision (change from the proposal):** panels are sized for **day + night** energy: `kWp = (E + E_night) ÷ (PSH × 0.8)`, because the panels must also recharge the battery for the night. The worked example goes from 8 to 11 panels.
+- **Other decisions:** `inverter_size` returns `None` above 12 kW (never suggest an undersized inverter); `load_summary` trusts its input because the appliance form validates it.
+- **Tested (each checked by hand):** worked example → 10 / 4 / 3.5 kW; 4.17 kWp → 8 panels, 4.4 kWp, 20.8 m² (= proposal); battery (4 kWh, 1 day) → 10 kWh, 2 modules (= proposal); inverter 3.5 kW → 5 kW, 10 kW → None. Full chain with Jounieh's real winter value (2.46), off-grid → 13 panels, 7.15 kWp, 33.8 m², 5 kW, 10 kWh (vs 11 panels with 3.0).
