@@ -12,14 +12,18 @@ def validate_signup(form):
     confirm = form.get("confirm", "")
     if email == "":
         errors["email"] = "Email is required."
+    elif len(email) > 255:  # the User.email column holds at most 255 characters
+        errors["email"] = "Email must be at most 255 characters."  # PostgreSQL would reject it with an error
     elif not EMAIL.match(email):
         errors["email"] = "Enter a valid email address."
     if password == "":
         errors["password"] = "Password is required."
     elif len(password) < 6:
         errors["password"] = "Password must be at least 6 characters."
-    if confirm != "" and confirm != password:
-        errors["confirm"] = "Passwords do not match."
+    elif len(password) > 128:  # hashing a huge password wastes server time (simple denial-of-service)
+        errors["password"] = "Password must be at most 128 characters."  # 128 is plenty for any real password
+    if confirm != password:  # was: confirm != "" and ... -> an EMPTY confirm box slipped through
+        errors["confirm"] = "Passwords do not match."  # now the two boxes must always match
     return errors, email
 
 
