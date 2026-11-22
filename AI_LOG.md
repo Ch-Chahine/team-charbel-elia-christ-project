@@ -117,3 +117,16 @@
 - **My decision (change from the proposal):** panels are sized for **day + night** energy: `kWp = (E + E_night) ÷ (PSH × 0.8)`, because the panels must also recharge the battery for the night. The worked example goes from 8 to 11 panels.
 - **Other decisions:** `inverter_size` returns `None` above 12 kW (never suggest an undersized inverter); `load_summary` trusts its input because the appliance form validates it.
 - **Tested (each checked by hand):** worked example → 10 / 4 / 3.5 kW; 4.17 kWp → 8 panels, 4.4 kWp, 20.8 m² (= proposal); battery (4 kWh, 1 day) → 10 kWh, 2 modules (= proposal); inverter 3.5 kW → 5 kW, 10 kW → None. Full chain with Jounieh's real winter value (2.46), off-grid → 13 panels, 7.15 kWp, 33.8 m², 5 kW, 10 kWh (vs 11 panels with 3.0).
+
+## 16 Nov 2026 — Review of Christ's appliances PR
+- **Found:** his templates had a second `<main>` inside the one from `base.html`.
+- **My decision:** requested changes (Week 12: one `<main>` per page for accessibility); approved after he fixed it.
+
+## 22 Nov 2026 — solar.py: production of a system
+- **What I built:** `hourly_kwh` (kWh per hour), `best_window` (best block of consecutive hours in a day), `daily_kwh` (total per day), `best_day` (day with the most production).
+- **My decision:** `solar.py` imports `PERFORMANCE_RATIO` from `sizing.py`, so the 0.8 lives in one place only.
+- **Found:** Open-Meteo's hourly value is the average of the *previous* hour, so a value at 11:00 covers 10:00–11:00.
+- **My decision:** `best_window` subtracts 1 hour from the start time so the window shown is the real one.
+- **Guards:** a panel size ≤ 0 returns `[]`; an empty day or zero production returns `None`, so the page can show "no data" instead of crashing.
+- **Tested:** 3 kW at 763.8 W/m² gives 1.833 kWh; a hand-made day gives a best window of 10:00–14:00 (6.73 kWh); `daily_kwh` gives 3.33 / 1.2; `best_day` picks 23 Nov (10.8 kWh).
+- **Git lesson:** `git pull` on my feature branch only updated `origin/main`. I had to pull on `main` before `git merge main` brought in the new commits.
