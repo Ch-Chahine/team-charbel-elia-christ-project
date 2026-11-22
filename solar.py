@@ -65,3 +65,13 @@ def daily_kwh(hourly):  # add up the system's hourly kWh per day
         date = hour["time"][:10]  # first 10 characters = the date, "2026-11-22"
         days[date] = days.get(date, 0.0) + hour["kwh"]  # add this hour to its day's total (start at 0)
     return [{"date": date, "kwh": round(total, 2)} for date, total in days.items()]  # one dict per day, 2 decimals
+
+
+def best_day(daily):  # the day with the most production among the forecast days
+    """Return {date, kwh} for the best day from daily_kwh's list; None if there is no data or no sun."""
+    if not daily:  # empty list: no forecast
+        return None  # nothing to compare
+    best = max(daily, key=lambda day: day["kwh"])  # the day with the largest kWh
+    if best["kwh"] <= 0:  # every day is 0 (no sun at all)
+        return None  # no meaningful "best" day
+    return best  # e.g. {"date": "2026-11-22", "kwh": 10.8}
