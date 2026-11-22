@@ -38,3 +38,22 @@ def hourly_kwh(forecast, panel_kw):  # energy the user's system makes each hour
         kwh = panel_kw * hour["irradiance"] / 1000 * PERFORMANCE_RATIO  # e.g. 3 × 0.7638 × 0.8 = 1.833 kWh
         hours.append({"time": hour["time"], "kwh": round(kwh, 3)})  # 3 decimals: small hours stay visible
     return hours  # same order as the forecast
+
+
+def best_window(hourly, date, hours=4):  # best block of consecutive hours on one day
+    """Return {date, start, end, kwh} for the `hours` hours in a row with the most kWh on date; None if none."""
+    day = [h for h in hourly if h["time"][:10] == date]  # keep only that day's hours (still in time order)
+    if hours <= 0 or len(day) < hours:  # impossible window size, or not enough hours that day
+        return None  # nothing to suggest
+    best_start = 0  # position in `day` where the best block starts
+    best_total = 0.0  # energy of the best block so far
+    for i in range(len(day) - hours + 1):  # every possible block: 0..3, 1..4, 2..5, ...
+        total = sum(h["kwh"] for h in day[i:i + hours])  # energy produced in this block
+        if total > best_total:  # better than the best so far
+            best_start, best_total = i, total  # remember where it starts and how much it makes
+    if best_total <= 0:  # no sun at all that day (e.g. every value 0)
+        return None  # no useful window
+    first = day[best_start]["time"]  # e.g. "2026-11-22T11:00"
+    last = day[best_start + hours - 1]["time"]  # e.g. "2026-11-22T14:00"
+    start_hour = int(first[11:13]) - 1  # values are averages of the PREVIOUS hour, so "11:00" covers 10:00–11:00
+    return {"date": date, "start": f"{start_hour:02d}:00", "end": last[11:16], "kwh": round(best_total, 2)}
