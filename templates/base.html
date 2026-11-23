@@ -12,7 +12,7 @@
     <nav>
       <a href="{{ url_for('home') }}">Home</a>
       {% if current_user %}
-        <a href="{{ url_for('favorites') }}">My Favorites</a>
+        <a href="{{ url_for('systems') }}">My systems</a>
         <span class="who">{{ current_user.email }}</span>
         <form method="post" action="{{ url_for('logout') }}" class="logout-form">  {# POST, not a link (Week 9) #}
           {# CSRF token added in feature/security-config #}

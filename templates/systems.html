@@ -1,0 +1,38 @@
+{% extends "base.html" %}  {# shared layout #}
+{% block title %}My solar systems{% endblock %}  {# browser tab title #}
+{% block content %}
+<div class="page">
+  <div class="page-heading">
+    <div>
+      <h1>My solar systems</h1>  {# page heading #}
+      <p>Your systems and where they are. Open one to see its details.</p>
+    </div>
+    <a class="button" href="{{ url_for('system_new') }}">Add a system</a>  {# explains how to pick a town #}
+  </div>
+
+  {% if systems %}  {# the user has at least one system #}
+    <div class="card-grid">
+      {% for system in systems %}  {# one card per system #}
+        <article class="card">  {# one self-contained item #}
+          <h2><a href="{{ url_for('system_detail', system_id=system.id) }}">{{ system.name }}</a></h2>  {# name, escaped by Jinja #}
+          <p>{{ towns[system.place_id] or "Town unavailable" }}</p>  {# town name from the API (None if it failed) #}
+          <p>{{ system.panel_kw }} kW · tilt {{ system.tilt }}° · direction {{ system.azimuth }}° · battery {{ system.battery_kwh }} kWh</p>
+          <div class="card-actions">
+            <a href="{{ url_for('system_edit', system_id=system.id) }}">Edit</a>  {# GET: just opens the form #}
+            <form method="post" action="{{ url_for('system_delete', system_id=system.id) }}">  {# POST: deleting changes data #}
+              {# CSRF token added in feature/security-config #}
+              <button class="button button-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}  {# no systems yet #}
+    <section class="empty-state">
+      <h2>No systems yet</h2>
+      <p>Search for the town where your panels are, then choose "Add a system in this town".</p>
+      <a class="button" href="{{ url_for('home') }}">Search for your town</a>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

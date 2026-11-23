@@ -1,4 +1,4 @@
-"""Server-side validation for sign-up, log-in and town search."""
+"""Server-side validation for sign-up, log-in, town search and solar systems."""
 import re
 
 EMAIL = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
@@ -48,3 +48,33 @@ def validate_search(args):  # check the town search box (?q=...) before calling 
     elif not TOWN_NAME_PATTERN.match(query):  # forbidden characters
         errors["q"] = "Use letters, spaces, hyphens and apostrophes only."  # characters message
     return errors, query  # same shape as validate_signup: (errors, cleaned value)
+
+# The allowed range for each number on the solar system form (the same ranges as models.py).
+SYSTEM_RANGES = {  # field name -> (minimum, maximum, label used in the error message)
+    "panel_kw": (0.1, 50, "Panel power"),  # total panel power in kW
+    "tilt": (0, 90, "Tilt"),  # 0 = flat, 90 = vertical
+    "azimuth": (-180, 180, "Direction"),  # 0 = south, -90 = east, 90 = west
+    "battery_kwh": (0, 100, "Battery"),  # 0 = no battery
+}
+
+
+def validate_system(form):  # check the solar system form (add + edit); same style as validate_signup
+    errors = {}  # field name -> error message
+    values = {}  # field name -> cleaned value, ready for the SolarSystem columns
+    name = form.get("name", "").strip()  # the user's label, without outer spaces
+    if not 1 <= len(name) <= 40:  # empty or too long (the column holds 40 characters)
+        errors["name"] = "Name must be between 1 and 40 characters."
+    values["name"] = name  # keep it, so the form can show it again
+    for field, (low, high, label) in SYSTEM_RANGES.items():  # check the 4 numbers the same way
+        text = form.get(field, "").strip()  # what was typed, e.g. "3.5"
+        if field == "battery_kwh" and text == "":  # an empty battery box means "no battery"
+            text = "0"  # treat it as 0 kWh
+        try:  # float() fails on text like "abc" or ""
+            number = float(text)  # "3.5" -> 3.5
+        except ValueError:  # not a number at all
+            errors[field] = f"{label} must be a number."
+            continue  # skip the range check for this field
+        if not low <= number <= high:  # outside the range; also catches "nan" and "inf"
+            errors[field] = f"{label} must be between {low} and {high}."
+        values[field] = number  # the cleaned number
+    return errors, values  # errors = {} when everything is valid
