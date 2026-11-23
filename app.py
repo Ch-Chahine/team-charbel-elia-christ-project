@@ -11,8 +11,9 @@ import os
 from functools import wraps
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   session, flash, abort)
+                   session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.exc import IntegrityError  # raised when a unique rule (e.g. email) is broken
 
 from models import db, User, Favorite, Appliance
 import api_client
@@ -81,6 +82,18 @@ def login_required(view):
     return wrapped
 
 
+@app.before_request  # runs before EVERY request (Week 9: "Current user on each request")
+def load_current_user():  # find who is logged in, once per request
+    g.user = None  # default: nobody is logged in
+    user_id = session.get("user_id")  # the id saved at log-in (None if not logged in)
+    if user_id is not None:  # someone claims to be logged in
+        user = db.session.get(User, user_id)  # load that user from the database
+        if user is None:  # the account no longer exists (deleted)
+            session.clear()  # end the session, so login_required sends them to /login
+        else:  # the account exists
+            g.user = user  # routes can use g.user instead of querying again
+
+
 # ---------- content (from your API) --------------------------------
 @app.route("/")
 def home():
@@ -132,26 +145,83 @@ def town(place_id):  # show one town and its 3-day sunshine forecast
 #   logout        : session.clear(); redirect home.
 # A worked version of favorites below shows how session["user_id"] is used.
 
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    if request.method == "POST":
-        # TODO: implement sign-up (see the Sessions & Login slides).
-        pass
-    return render_template("signup.html", errors={}, data={})
+# A real hash of a random password, made once at start-up. When an email does not exist,
+# log-in still runs check_password_hash against this, so a missing account takes the same
+# time as a wrong password (an attacker can't use the response time to find valid emails).
+DUMMY_HASH = generate_password_hash(os.urandom(16).hex())  # nobody knows this password
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        # TODO: implement log-in (see the Sessions & Login slides).
-        pass
-    return render_template("login.html", errors={}, data={})
+@app.route("/signup", methods=["GET", "POST"])  # GET shows the form, POST creates the account
+def signup():  # create a new account
+    if request.method == "POST":  # the form was submitted
+        errors, email = validate_signup(request.form)  # check every field on the server (never trust the browser)
+        if not errors and User.query.filter_by(email=email).first():  # input is fine, but the email is taken
+            errors["email"] = "This email can't be used. If it's yours, log in instead."  # no "already registered" detail
+        if errors:  # something is wrong -> show the form again
+            return render_template("signup.html", errors=errors,  # the messages under each field
+                                   data={"email": email}), 400  # keep the email typed (never the password); 400 = bad input
+        user = User(email=email,  # the new row, email already lower-case and trimmed
+                    password_hash=generate_password_hash(request.form["password"]))  # store ONLY the hash
+        db.session.add(user)  # stage the new user
+        try:  # the commit can still fail if two sign-ups use the same email at the same moment
+            db.session.commit()  # save -> user.id is created
+        except IntegrityError:  # the unique rule on email blocked it
+            db.session.rollback()  # undo the failed write (Week 10)
+            errors["email"] = "This email can't be used. If it's yours, log in instead."  # same message as above
+            return render_template("signup.html", errors=errors, data={"email": email}), 400  # show the form again
+        session.clear()  # drop anything already in the session (against session fixation)
+        session["user_id"] = user.id  # log the new user in: store only the small id
+        flash("Welcome! Your account was created.")  # one-time message on the next page
+        return redirect(url_for("welcome"))  # next step: the onboarding question
+    return render_template("signup.html", errors={}, data={})  # GET: empty form
 
 
-@app.route("/logout")
-def logout():
-    # TODO: end the session (hint: session.clear()), then redirect home.
-    return redirect(url_for("home"))
+@app.route("/login", methods=["GET", "POST"])  # GET shows the form, POST checks the credentials
+def login():  # start a session for an existing user
+    if request.method == "POST":  # the form was submitted
+        errors, email = validate_login(request.form)  # both fields filled in?
+        if errors:  # an empty field -> show the form again
+            return render_template("login.html", errors=errors, data={"email": email}), 400  # 400 = bad input
+        password = request.form["password"]  # the typed password (only used for checking, never stored)
+        user = User.query.filter_by(email=email).first()  # the account with this email, or None
+        stored_hash = user.password_hash if user else DUMMY_HASH  # no account -> check against the dummy hash
+        password_ok = check_password_hash(stored_hash, password)  # always runs, so both cases take the same time
+        if user is None or not password_ok:  # wrong email OR wrong password
+            app.logger.warning("Failed log-in for %r", email)  # %r escapes newlines (no fake log lines); never the password
+            errors["form"] = "Email or password is incorrect."  # ONE message for both cases (Week 9)
+            return render_template("login.html", errors=errors, data={"email": email}), 401  # 401 = not authenticated
+        session.clear()  # new login -> brand-new session (against session fixation)
+        session["user_id"] = user.id  # remember who is logged in
+        flash("You are logged in.")  # one-time message
+        if user.has_solar is None:  # never answered the onboarding question
+            return redirect(url_for("welcome"))  # ask it now
+        return redirect(url_for("home"))  # fixed destination (no ?next= -> no open redirect)
+    return render_template("login.html", errors={}, data={})  # GET: empty form
+
+
+@app.route("/logout", methods=["POST"])  # POST only: a link or <img> on another site can't log users out
+def logout():  # end the session
+    session.clear()  # remove everything, including user_id
+    flash("You have been logged out.")  # one-time message
+    return redirect(url_for("home"))  # back to the home page
+
+
+@app.route("/welcome", methods=["GET", "POST"])  # onboarding: "Do you already have a solar system?"
+@login_required  # only for logged-in users
+def welcome():  # ask once, remember the answer in user.has_solar
+    if request.method == "POST":  # one of the two buttons was clicked
+        answer = request.form.get("has_solar", "")  # "yes", "no", or anything a tampered form sends
+        if answer not in ("yes", "no"):  # only these two values are accepted
+            flash("Please choose one of the two options.")  # explain the problem
+            return render_template("welcome.html"), 400  # ask again; 400 = bad input
+        g.user.has_solar = (answer == "yes")  # True = owner, False = future owner
+        db.session.commit()  # save the answer
+        if g.user.has_solar:  # already owns a system
+            flash("Great! You can add your system soon.")  # TODO feature/systems: redirect to url_for("system_new")
+            return redirect(url_for("home"))  # temporary destination until the systems pages exist
+        flash("Let's plan your system: start by adding your appliances.")  # first step of the planner
+        return redirect(url_for("appliances"))  # Christ's appliance pages (the planner's input)
+    return render_template("welcome.html")  # GET: show the question
 
 
 # ---------- favorites (login required) -----------------------------
