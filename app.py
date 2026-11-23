@@ -2,7 +2,7 @@
 <YOUR PROJECT NAME> -- a Flask web app (team project starter).
 
 Content comes from an external API (see api_client.py). The only data stored
-is user accounts and their favorites (see models.py). Authentication is
+is user accounts and their own data: systems, appliances... (see models.py). Authentication is
 email + password with Flask sessions.
 
 Run locally:   flask run --debug    ->   http://127.0.0.1:5000
@@ -13,12 +13,12 @@ from functools import wraps
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy.exc import IntegrityError  # raised when a unique rule (e.g. email) is broken
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # IntegrityError = a broken unique rule; SQLAlchemyError = any database error
 
-from models import db, User, Favorite, Appliance
+from models import db, User, Appliance, SolarSystem  # Favorite removed: SolarSystem replaced it
 import api_client
 import solar  # our calculations (daily sunshine summary)
-from validators import validate_signup, validate_login, validate_search
+from validators import validate_signup, validate_login, validate_search, validate_system
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
@@ -62,14 +62,8 @@ with app.app_context():
 
 @app.context_processor
 def inject_globals():
-    """Make the logged-in user (and their favorite ids) available in templates."""
-    user = None
-    favorite_ids = set()
-    if "user_id" in session:
-        user = User.query.get(session["user_id"])
-        if user:
-            favorite_ids = {f.item_id for f in user.favorites}
-    return {"current_user": user, "favorite_ids": favorite_ids}
+    """Make the logged-in user available in templates as current_user."""
+    return {"current_user": g.get("user")}  # set by load_current_user (None if logged out); no second query
 
 
 def login_required(view):
@@ -143,7 +137,7 @@ def town(place_id):  # show one town and its 3-day sunshine forecast
 #   login  (POST): validate; find the user by email; check_password_hash;
 #                  on success store session["user_id"]; else show an error.
 #   logout        : session.clear(); redirect home.
-# A worked version of favorites below shows how session["user_id"] is used.
+# The appliances and systems sections below show how the logged-in user is used.
 
 # A real hash of a random password, made once at start-up. When an email does not exist,
 # log-in still runs check_password_hash against this, so a missing account takes the same
@@ -217,51 +211,140 @@ def welcome():  # ask once, remember the answer in user.has_solar
         g.user.has_solar = (answer == "yes")  # True = owner, False = future owner
         db.session.commit()  # save the answer
         if g.user.has_solar:  # already owns a system
-            flash("Great! You can add your system soon.")  # TODO feature/systems: redirect to url_for("system_new")
-            return redirect(url_for("home"))  # temporary destination until the systems pages exist
+            flash("Great! Search for your town, then add your system from the town page.")  # how to start
+            return redirect(url_for("system_new"))  # the add-system page explains the steps
         flash("Let's plan your system: start by adding your appliances.")  # first step of the planner
         return redirect(url_for("appliances"))  # Christ's appliance pages (the planner's input)
     return render_template("welcome.html")  # GET: show the question
 
 
-# ---------- favorites (login required) -----------------------------
-@app.route("/favorites")
-@login_required
-def favorites():
-    items = Favorite.query.filter_by(user_id=session["user_id"]).all()
-    return render_template("favorites.html", favorites=items)
+# ---------- solar systems (login required) ------------------------
+MAX_SYSTEMS = 10  # limit per user, so one account can't fill the database with rows
 
 
-@app.route("/favorites/add", methods=["POST"])
-@login_required
-def favorites_add():
-    item_id = request.form.get("item_id", "").strip()
-    if item_id:
-        exists = Favorite.query.filter_by(
-            user_id=session["user_id"], item_id=item_id).first()
-        if exists:
-            flash("Already in your favorites.")
-        else:
-            db.session.add(Favorite(
-                user_id=session["user_id"], item_id=item_id,
-                item_title=request.form.get("item_title", ""),
-                item_image=request.form.get("item_image", "")))
-            db.session.commit()
-            flash("Saved to favorites.")
-    return redirect(request.form.get("next") or url_for("favorites"))
+def get_own_system(system_id):  # load a system and make sure it belongs to the logged-in user
+    system = db.session.get(SolarSystem, system_id)  # the row with this id, or None
+    if system is None:  # no system with this id
+        abort(404)  # "page not found"
+    if system.user_id != g.user.id:  # it exists, but belongs to someone else
+        app.logger.warning("User %s was refused system %s", g.user.id, system_id)  # log it (Week 11)
+        abort(403)  # "forbidden"
+    return system  # safe to show or change
 
 
-@app.route("/favorites/remove", methods=["POST"])
-@login_required
-def favorites_remove():
-    item_id = request.form.get("item_id", "").strip()
-    fav = Favorite.query.filter_by(
-        user_id=session["user_id"], item_id=item_id).first()
-    if fav:
-        db.session.delete(fav)
-        db.session.commit()
-        flash("Removed from favorites.")
-    return redirect(request.form.get("next") or url_for("favorites"))
+def check_town(place_id):  # validate a town id with Open-Meteo before saving it
+    if place_id is None:  # missing or not a whole number
+        return None, "Choose a town first: search for it, then use \"Add a system in this town\"."
+    town = api_client.get_town(place_id)  # town dict, {} (unknown / outside Lebanon) or None (API failed)
+    if town is None:  # Open-Meteo is down or slow
+        return None, "We can't check the town right now. Please try again in a minute."
+    if not town:  # {} -> not a valid Lebanese town
+        return None, "This town is not valid. Please search for it again."
+    return town, None  # the town's details, no error
+
+
+@app.route("/systems")  # GET /systems -> my solar systems
+@login_required  # only for logged-in users
+def systems():  # list the logged-in user's systems
+    my_systems = (SolarSystem.query  # only this user's rows (never all systems)
+                  .filter_by(user_id=g.user.id)  # the ownership filter
+                  .order_by(SolarSystem.name)  # alphabetical
+                  .all())  # run the query -> list of SolarSystem objects
+    towns = {}  # place_id -> town name, to show where each system is
+    for place_id in {s.place_id for s in my_systems}:  # each different town once (the API answer is cached)
+        town = api_client.get_town(place_id)  # town dict, {} or None
+        towns[place_id] = town["name"] if town else None  # None -> the page shows "Town unavailable"
+    return render_template("systems.html", systems=my_systems, towns=towns)  # show the list
+
+
+@app.route("/systems/new", methods=["GET", "POST"])  # GET = form, POST = save
+@login_required  # only for logged-in users
+def system_new():  # add a solar system
+    if request.method == "POST":  # the form was submitted
+        place_id = request.form.get("place_id", type=int)  # hidden field; None if missing or not a number
+    else:  # GET: the town comes from the link on the town page
+        place_id = request.args.get("place_id", type=int)  # /systems/new?place_id=273140
+    if place_id is None:  # no town chosen yet
+        return render_template("system_form.html", system=None, town=None,  # explain how to choose a town
+                               errors={}, form_data={})
+    town, town_error = check_town(place_id)  # never trust the id: hidden fields and URLs can be edited
+    if town_error:  # missing, unknown, or the API failed
+        flash(town_error)  # explain the problem
+        return render_template("system_form.html", system=None, town=None,  # back to the "choose a town" step
+                               errors={}, form_data={}), 400  # 400 = bad request
+    if request.method == "POST":  # town is valid -> check the other fields
+        errors, values = validate_system(request.form)  # name + 4 numbers
+        if not errors and len(g.user.systems) >= MAX_SYSTEMS:  # the user already has the maximum
+            errors["form"] = f"You can have at most {MAX_SYSTEMS} systems."
+        if errors:  # something is wrong -> show the form again with the messages
+            return render_template("system_form.html", system=None, town=town,
+                                   errors=errors, form_data=request.form), 400
+        system = SolarSystem(user_id=g.user.id, place_id=place_id, **values)  # owner from the SESSION, never from the form
+        g.user.has_solar = True  # whoever adds a system is now an owner
+        db.session.add(system)  # stage the new row
+        try:  # the database can still fail
+            db.session.commit()  # save it
+        except SQLAlchemyError:  # any database error
+            db.session.rollback()  # undo, so the session is clean (Week 10)
+            app.logger.exception("Could not save system")  # full error in the server log only
+            flash("Could not save the system. Please try again.")  # simple message for the user
+            return render_template("system_form.html", system=None, town=town,
+                                   errors={}, form_data=request.form), 500
+        flash("System added.")  # success message
+        return redirect(url_for("system_detail", system_id=system.id))  # show the new system
+    return render_template("system_form.html", system=None, town=town,  # GET with a valid town: empty form
+                           errors={}, form_data={})
+
+
+@app.route("/systems/<int:system_id>")  # GET /systems/5
+@login_required  # only for logged-in users
+def system_detail(system_id):  # one system's page (Chahine adds its forecast here)
+    system = get_own_system(system_id)  # 404 if missing, 403 if not yours
+    town = api_client.get_town(system.place_id)  # town dict, {} or None
+    return render_template("system_detail.html", system=system, town=town or None)  # {} and None both -> "Town unavailable"
+
+
+@app.route("/systems/<int:system_id>/edit", methods=["GET", "POST"])  # GET = form, POST = save
+@login_required  # only for logged-in users
+def system_edit(system_id):  # change a system (its town stays the same)
+    system = get_own_system(system_id)  # 404 if missing, 403 if not yours
+    town = api_client.get_town(system.place_id) or None  # only to show the town name
+    if request.method == "POST":  # the form was submitted
+        errors, values = validate_system(request.form)  # name + 4 numbers (any place_id in the form is ignored)
+        if errors:  # show the form again with the messages
+            return render_template("system_form.html", system=system, town=town,
+                                   errors=errors, form_data=request.form), 400
+        for field, value in values.items():  # copy each cleaned value onto the row
+            setattr(system, field, value)  # e.g. system.panel_kw = 3.5
+        try:  # the database can still fail
+            db.session.commit()  # save the changes
+        except SQLAlchemyError:  # any database error
+            db.session.rollback()  # undo
+            app.logger.exception("Could not update system")  # details in the server log only
+            flash("Could not update the system. Please try again.")
+            return render_template("system_form.html", system=system, town=town,
+                                   errors={}, form_data=request.form), 500
+        flash("System updated.")  # success message
+        return redirect(url_for("system_detail", system_id=system.id))  # back to the system page
+    return render_template("system_form.html", system=system, town=town,  # GET: form filled with current values
+                           errors={}, form_data={})
+
+
+@app.route("/systems/<int:system_id>/delete", methods=["POST"])  # POST only: a link can't delete
+@login_required  # only for logged-in users
+def system_delete(system_id):  # delete a system and its production logs
+    system = get_own_system(system_id)  # 404 if missing, 403 if not yours
+    try:  # the database can fail
+        db.session.delete(system)  # its ProductionLog rows go too (cascade in models.py)
+        db.session.commit()  # save the deletion
+    except SQLAlchemyError:  # any database error
+        db.session.rollback()  # undo
+        app.logger.exception("Could not delete system")  # details in the server log only
+        flash("Could not delete the system. Please try again.")
+    else:  # no error
+        flash("System deleted.")
+    return redirect(url_for("systems"))  # back to the list
+
 
 # ---------- appliances (login required) ---------------------------
 

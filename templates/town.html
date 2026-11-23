@@ -74,5 +74,8 @@
     </section>
   </article>
 {% endif %}
+{% if town and current_user %}  {# logged in + the town loaded #}
+  <p><a class="button" href="{{ url_for('system_new', place_id=town.id) }}">Add a system in this town</a></p>  {# opens the form with this town #}
+{% endif %}
 <p><a href="{{ url_for('home') }}">New search</a></p>  {# link back to the search box #}
 {% endblock %}
