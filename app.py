@@ -23,6 +23,23 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
 
+EXAMPLE_KW = 3          # example system size: 3 kW, a typical Lebanese home system
+EXAMPLE_TILT = 30       # panels tilted 30°, close to the best angle for Lebanon's latitude
+EXAMPLE_AZIMUTH = 0     # 0 = facing south in Open-Meteo (-90 east, 90 west)
+
+
+def example_system(lat, lon):
+    """Run a fixed 3 kW system through the solar functions for one town."""
+    forecast = api_client.get_forecast(lat, lon, EXAMPLE_TILT, EXAMPLE_AZIMUTH)  # hourly tilted irradiance for 3 days
+    if forecast is None:  # None = the API failed (our api_client contract)
+        return None  # tell the route to show an error message
+    hourly = solar.hourly_kwh(forecast, EXAMPLE_KW)  # kWh produced each hour
+    daily = solar.daily_kwh(hourly)  # total kWh per day
+    best = solar.best_day(daily)  # the day with the most production (or None)
+    window = solar.best_window(hourly, best["date"]) if best else None  # best 4 hours of that day
+    return {"kw": EXAMPLE_KW, "daily": daily, "best_day": best, "best_window": window}  # one dict for the template
+
+
 def database_uri():
     """PostgreSQL on Render (DATABASE_URL), else a local SQLite file."""
     url = os.environ.get("DATABASE_URL")
@@ -93,9 +110,10 @@ def town(place_id):  # show one town and its 3-day sunshine forecast
         abort(404)  # standard "page not found"
     hours = api_client.get_town_forecast(data["lat"], data["lon"])  # hourly sunshine, [] (invalid) or None (API failed)
     forecast = solar.daily_sunshine(hours) if hours else []  # one summary per day; [] if no hours
+    example = example_system(data["lat"], data["lon"])  # 3 kW example: daily kWh, best day, best window (None if API failed)
     return render_template("town.html", town=data, api_failed=False,  # show the town
-                           forecast=forecast, forecast_failed=hours is None)  # + forecast, or a "forecast unavailable" flag
-
+        forecast=forecast, forecast_failed=hours is None,  # + forecast, or a "forecast unavailable" flag
+        example=example)  # + the 3 kW example system (None if the API failed)
 
 # ===================================================================
 # AUTHENTICATION  --  YOU BUILD THIS (sign-up, log-in, log-out, sessions)

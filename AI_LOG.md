@@ -130,3 +130,10 @@
 - **Guards:** a panel size ≤ 0 returns `[]`; an empty day or zero production returns `None`, so the page can show "no data" instead of crashing.
 - **Tested:** 3 kW at 763.8 W/m² gives 1.833 kWh; a hand-made day gives a best window of 10:00–14:00 (6.73 kWh); `daily_kwh` gives 3.33 / 1.2; `best_day` picks 23 Nov (10.8 kWh).
 - **Git lesson:** `git pull` on my feature branch only updated `origin/main`. I had to pull on `main` before `git merge main` brought in the new commits.
+## 22 Nov 2026 — Example system on the town page
+- **Goal:** show my `solar.py` functions on the live site before login and the systems pages exist.
+- **My decision:** a fixed 3 kW system (tilt 30°, facing south), with the settings as constants at the top of `app.py` so they're easy to change.
+- **How:** `example_system(lat, lon)` chains `get_forecast` → `hourly_kwh` → `daily_kwh` → `best_day` → `best_window`; it returns `None` if the API fails.
+- **Page:** a new section in `town.html` with the best day, the best 4-hour window and a table of kWh per day, plus error and empty states (`role="alert"` / `role="status"`).
+- **Tested:** Jounieh gives 8.66 / 11.27 / 8.75 kWh, best day 23 Nov, best window 09:00–13:00 (6.91 kWh). A dropped connection was logged and returned `None`, with no crash.
+- **Later:** when the systems pages exist, the same chain runs with the user's real panel size on `/systems/<id>`.
