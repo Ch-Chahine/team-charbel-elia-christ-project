@@ -44,3 +44,72 @@ def validate_search(args):  # check the town search box (?q=...) before calling 
     elif not TOWN_NAME_PATTERN.match(query):  # forbidden characters
         errors["q"] = "Use letters, spaces, hyphens and apostrophes only."  # characters message
     return errors, query  # same shape as validate_signup: (errors, cleaned value)
+
+
+def validate_plan(form):
+    """Validate and clean planner inputs."""
+
+    errors = {}
+
+    # Town ID
+    place_id_raw = form.get("place_id", "").strip()
+
+    if not place_id_raw.isdecimal():
+        errors["place_id"] = "Choose a valid town."
+        place_id = None
+    else:
+        place_id = int(place_id_raw)
+
+        if place_id <= 0 or place_id > 2147483647:
+            errors["place_id"] = "Choose a valid town."
+            place_id = None
+
+    # Battery autonomy
+    autonomy_raw = form.get("autonomy_days", "").strip()
+
+    if not autonomy_raw.isdecimal():
+        errors["autonomy_days"] = (
+            "Battery autonomy must be a whole number from 0 to 3."
+        )
+        autonomy_days = None
+    else:
+        autonomy_days = int(autonomy_raw)
+
+        if not 0 <= autonomy_days <= 3:
+            errors["autonomy_days"] = (
+                "Battery autonomy must be from 0 to 3."
+            )
+
+    # EDL / generator availability
+    has_grid_raw = form.get("has_grid", "").strip().lower()
+
+    if has_grid_raw not in {"yes", "no"}:
+        errors["has_grid"] = "Choose yes or no."
+        has_grid = None
+    else:
+        has_grid = has_grid_raw == "yes"
+
+    # Panel wattage
+    panel_raw = form.get("panel_w", "").strip()
+
+    if not panel_raw.isdecimal():
+        errors["panel_w"] = (
+            "Panel size must be a whole number from 100 to 800 W."
+        )
+        panel_w = None
+    else:
+        panel_w = int(panel_raw)
+
+        if not 100 <= panel_w <= 800:
+            errors["panel_w"] = (
+                "Panel size must be from 100 to 800 W."
+            )
+
+    values = {
+        "place_id": place_id,
+        "autonomy_days": autonomy_days,
+        "has_grid": has_grid,
+        "panel_w": panel_w,
+    }
+
+    return errors, values

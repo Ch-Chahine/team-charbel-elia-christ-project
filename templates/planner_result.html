@@ -1,0 +1,266 @@
+
+{% extends "base.html" %}
+
+{% block title %}Solar System Results{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<section class="planner-page">
+
+    <div class="planner-intro">
+        <h1>Your Solar System Results</h1>
+        <p>
+            Here is the recommended solar installation based on
+            your appliances, location, and selected preferences.
+        </p>
+    </div>
+
+    {% if error %}
+
+        <div class="error-message" role="alert">
+            <p>{{ error }}</p>
+        </div>
+
+        <a href="{{ url_for('planner') }}" class="planner-button">
+            Return to Planner
+        </a>
+
+    {% else %}
+
+        <!-- Selected configuration -->
+        <div class="planner-card">
+
+            <h2>Selected Configuration</h2>
+
+            <div class="configuration-grid">
+
+                <div class="result-item">
+                    <span class="result-label">Town</span>
+                    <strong>{{ town.get('name', 'Selected town') }}</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">Battery Autonomy</span>
+                    <strong>{{ plan.autonomy_days }} days</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">EDL / Generator</span>
+                    <strong>
+                        {{ 'Yes' if plan.has_grid else 'No' }}
+                    </strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">Panel Wattage</span>
+                    <strong>{{ plan.panel_w }} W</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">Winter Sun Hours</span>
+                    <strong>{{ result.psh_winter }} hours</strong>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- Energy consumption -->
+        <div class="planner-card">
+
+            <h2>Energy Consumption Analysis</h2>
+
+            <div class="results-grid">
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Daily Energy Consumption
+                    </span>
+                    <strong>{{ summary.e_day }} kWh</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Night Energy Consumption
+                    </span>
+                    <strong>{{ summary.e_night }} kWh</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Peak Power
+                    </span>
+                    <strong>{{ summary.peak_kw }} kW</strong>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- Recommended solar system -->
+        <div class="planner-card">
+
+            <h2>Recommended Solar System</h2>
+
+            <div class="results-grid">
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Required Solar Capacity
+                    </span>
+                    <strong>{{ result.kwp }} kWp</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Number of Solar Panels
+                    </span>
+                    <strong>{{ result.panels }}</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Installed Solar Capacity
+                    </span>
+                    <strong>{{ result.installed_kwp }} kWp</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Panel Wattage
+                    </span>
+                    <strong>{{ result.panel_w }} W</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Estimated Roof Area
+                    </span>
+                    <strong>{{ result.roof_m2 }} m²</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Inverter Size
+                    </span>
+                    <strong>
+                        {% if result.inverter_kw %}
+                            {{ result.inverter_kw }} kW
+                        {% else %}
+                            Not available
+                        {% endif %}
+                    </strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Battery Capacity
+                    </span>
+                    <strong>{{ result.battery_kwh }} kWh</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        Battery Modules
+                    </span>
+                    <strong>{{ result.battery_modules }}</strong>
+                </div>
+
+                <div class="result-item">
+                    <span class="result-label">
+                        System Architecture
+                    </span>
+                    <strong>{{ result.architecture }}</strong>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- Appliances -->
+        <div class="planner-card">
+
+            <h2>Appliances Included in the Calculation</h2>
+
+            {% if appliances %}
+
+                <div class="table-wrapper">
+
+                    <table class="appliances-table">
+
+                        <thead>
+                            <tr>
+                                <th>Appliance</th>
+                                <th>Power (W)</th>
+                                <th>Quantity</th>
+                                <th>Day Hours</th>
+                                <th>Night Hours</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                            {% for appliance in appliances %}
+
+                                <tr>
+                                    <td>{{ appliance.name }}</td>
+                                    <td>{{ appliance.power_w }}</td>
+                                    <td>{{ appliance.quantity }}</td>
+                                    <td>{{ appliance.hours_day }}</td>
+                                    <td>{{ appliance.hours_night }}</td>
+                                </tr>
+
+                            {% endfor %}
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            {% else %}
+
+                <p>No appliances found.</p>
+
+            {% endif %}
+
+        </div>
+
+
+        <!-- Actions -->
+        <div class="planner-actions">
+
+            <a href="{{ url_for('planner') }}"
+               class="secondary-button">
+                Edit Configuration
+            </a>
+
+            <form method="POST"
+                  action="{{ url_for('planner_install') }}">
+
+                <button type="submit" class="planner-button">
+                    Install This Solar System
+                </button>
+
+            </form>
+
+        </div>
+
+        <p class="result-disclaimer">
+            These results are estimates based on your registered
+            appliances and selected configuration. A professional
+            assessment is recommended before installation.
+        </p>
+
+    {% endif %}
+
+</section>
+
+{% endblock %}
