@@ -306,9 +306,10 @@ def system_new():  # add a solar system
 def system_detail(system_id):  # one system's page (Chahine adds its forecast here)
     system = get_own_system(system_id)  # 404 if missing, 403 if not yours
     town = api_client.get_town(system.place_id)  # town dict, {} or None
-    return render_template("system_detail.html", system=system, town=town or None)  # {} and None both -> "Town unavailable"
-
-
+    production = (system_production(town["lat"], town["lon"], system.panel_kw, system.tilt, system.azimuth)
+                  if town else None)  # this system's 3-day forecast; None if the town or the API failed
+    return render_template("system_detail.html", system=system, town=town or None,  # {} and None both -> "Town unavailable"
+                           production=production)  # + the forecast for this system
 @app.route("/systems/<int:system_id>/edit", methods=["GET", "POST"])  # GET = form, POST = save
 @login_required  # only for logged-in users
 def system_edit(system_id):  # change a system (its town stays the same)
