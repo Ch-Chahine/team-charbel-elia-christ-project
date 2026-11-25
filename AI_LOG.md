@@ -146,3 +146,24 @@
 - **Page:** best day, best 4-hour window, kWh table with the system's own settings in the caption; error, empty and "estimate" notes.
 - **Bug found:** `'production' is undefined`. The route wasn't sending `production` to the template yet; fixed by adding `production=production` to `render_template`. Lesson: `is none` is False for an undefined variable.
 - **Tested:** sign up → add a 5 kW / 20° / −45° system in Jounieh → forecast shown; edit to 3 kW / 30° / 0° → same numbers as the town example.
+
+## 23 Nov 2026 — Reviews of Elia's auth and systems PRs
+- **Auth (#11):** checked hash-only passwords, `session.clear()` before login, one generic error + dummy hash (no email enumeration), POST logout, IntegrityError rollback. Approved after testing locally on a merged test branch; noted CSRF and `inject_globals` → `g.user` as follow-ups.
+- **Systems (#12):** checked `get_own_system` (404/403 + log), owner from the session, `place_id` re-checked with my `get_town`, 10-system limit. Approved; noted that a failed town check on POST loses the typed values.
+
+## 25 Nov 2026 — Review of Christ's planner PR
+- **Found:** his branch was made from the main of 16 Nov → conflicts in app.py, base.html, validators.py, and it still imports `Favorite`, which no longer exists (the site would crash).
+- **My decision:** requested changes: `git merge main` and keep both sides. Planner logic is correct (uses my `load_summary` → `get_winter_sun_hours` → `suggest_system`, handles `inverter_kw` None).
+- **Also suggested:** a JSON route instead of scraping `/search` HTML, the `MAX_SYSTEMS` check, one helper instead of duplicated sizing code.
+
+## 25 Nov 2026 — Live sign-up error on Render
+- **Found:** 500 on sign-up; the Render log said `column user.has_solar does not exist`.
+- **Cause:** `db.create_all()` creates missing tables but never adds columns; Render's `user` table was still the starter's.
+- **Fix:** drop the old tables once (`DROP TABLE ... "user" CASCADE`, including the old `favorite`) and restart, so `create_all` rebuilds them. Elia (database owner) is doing it.
+
+## 25 Nov 2026 — Next best window
+- **Problem:** in the evening the pages showed today's best window (09:00–13:00), which had already passed.
+- **What I built:** `solar.next_best_window(hourly, now)` keeps only the hours that haven't ended, runs `best_window` on each remaining day, and returns the one with the most kWh (or None).
+- **Time zone:** `now = datetime.now(ZoneInfo("Asia/Beirut"))`, formatted like the API's times, so the text comparison works; Render runs on UTC. Added `tzdata` (Windows has no time-zone data).
+- **Pages:** "Next best time" now shows the date, because the window can be tomorrow.
+- **Tested:** hand data (08:00 → today, 19:00 → tomorrow, last evening → None); live Jounieh at 19:55 → 26 Nov 09:00–13:00 (7.69 kWh).
