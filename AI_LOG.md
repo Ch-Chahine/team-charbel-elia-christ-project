@@ -137,3 +137,12 @@
 - **Page:** a new section in `town.html` with the best day, the best 4-hour window and a table of kWh per day, plus error and empty states (`role="alert"` / `role="status"`).
 - **Tested:** Jounieh gives 8.66 / 11.27 / 8.75 kWh, best day 23 Nov, best window 09:00–13:00 (6.91 kWh). A dropped connection was logged and returned `None`, with no crash.
 - **Later:** when the systems pages exist, the same chain runs with the user's real panel size on `/systems/<id>`.
+
+
+## 25 Nov 2026 — System forecast page
+- **Goal:** fill the "3-day production forecast" section Elia left on `/systems/<id>`.
+- **My decision:** split `example_system` into `system_production(lat, lon, panel_kw, tilt, azimuth)`; the town example now calls it with the fixed 3 kW settings, so both pages share one tested calculation.
+- **How:** `system_detail` gets the town's lat/lon from `get_town` (we only store `place_id`) and runs `system_production` with the system's saved values; `None` if the town or the API failed.
+- **Page:** best day, best 4-hour window, kWh table with the system's own settings in the caption; error, empty and "estimate" notes.
+- **Bug found:** `'production' is undefined`. The route wasn't sending `production` to the template yet; fixed by adding `production=production` to `render_template`. Lesson: `is none` is False for an undefined variable.
+- **Tested:** sign up → add a 5 kW / 20° / −45° system in Jounieh → forecast shown; edit to 3 kW / 30° / 0° → same numbers as the town example.

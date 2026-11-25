@@ -29,16 +29,21 @@ EXAMPLE_TILT = 30       # panels tilted 30°, close to the best angle for Lebano
 EXAMPLE_AZIMUTH = 0     # 0 = facing south in Open-Meteo (-90 east, 90 west)
 
 
-def example_system(lat, lon):
-    """Run a fixed 3 kW system through the solar functions for one town."""
-    forecast = api_client.get_forecast(lat, lon, EXAMPLE_TILT, EXAMPLE_AZIMUTH)  # hourly tilted irradiance for 3 days
+def system_production(lat, lon, panel_kw, tilt, azimuth):
+    """Run one solar system through the solar functions: daily kWh, best day, best window."""
+    forecast = api_client.get_forecast(lat, lon, tilt, azimuth)  # hourly irradiance on THIS system's tilted panels
     if forecast is None:  # None = the API failed (our api_client contract)
-        return None  # tell the route to show an error message
-    hourly = solar.hourly_kwh(forecast, EXAMPLE_KW)  # kWh produced each hour
+        return None  # the page shows an error message
+    hourly = solar.hourly_kwh(forecast, panel_kw)  # kWh produced each hour by this system
     daily = solar.daily_kwh(hourly)  # total kWh per day
     best = solar.best_day(daily)  # the day with the most production (or None)
     window = solar.best_window(hourly, best["date"]) if best else None  # best 4 hours of that day
-    return {"kw": EXAMPLE_KW, "daily": daily, "best_day": best, "best_window": window}  # one dict for the template
+    return {"kw": panel_kw, "daily": daily, "best_day": best, "best_window": window}  # one dict for the template
+
+
+def example_system(lat, lon):
+    """The town page's fixed example: 3 kW, tilt 30°, facing south."""
+    return system_production(lat, lon, EXAMPLE_KW, EXAMPLE_TILT, EXAMPLE_AZIMUTH)  # same code as a real system
 
 
 def database_uri():
@@ -301,9 +306,10 @@ def system_new():  # add a solar system
 def system_detail(system_id):  # one system's page (Chahine adds its forecast here)
     system = get_own_system(system_id)  # 404 if missing, 403 if not yours
     town = api_client.get_town(system.place_id)  # town dict, {} or None
-    return render_template("system_detail.html", system=system, town=town or None)  # {} and None both -> "Town unavailable"
-
-
+    production = (system_production(town["lat"], town["lon"], system.panel_kw, system.tilt, system.azimuth)
+                  if town else None)  # this system's 3-day forecast; None if the town or the API failed
+    return render_template("system_detail.html", system=system, town=town or None,  # {} and None both -> "Town unavailable"
+                           production=production)  # + the forecast for this system
 @app.route("/systems/<int:system_id>/edit", methods=["GET", "POST"])  # GET = form, POST = save
 @login_required  # only for logged-in users
 def system_edit(system_id):  # change a system (its town stays the same)
