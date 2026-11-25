@@ -49,7 +49,7 @@
           <p>Best day: <strong>{{ example.best_day.date }}</strong> with {{ example.best_day.kwh }} kWh.</p>  {# from solar.best_day #}
         {% endif %}
         {% if example.best_window %}  {# only if a best window exists #}
-          <p>Best time to run heavy appliances: <strong>{{ example.best_window.start }}–{{ example.best_window.end }}</strong> ({{ example.best_window.kwh }} kWh).</p>  {# from solar.best_window #}
+                  <p>Next best time to run heavy appliances: <strong>{{ example.best_window.date }}, {{ example.best_window.start }}–{{ example.best_window.end }}</strong> ({{ example.best_window.kwh }} kWh).</p>  {# from solar.next_best_window: never in the past #}
         {% endif %}
         <table>  {# kWh per day #}
           <caption>Estimated production of a {{ example.kw }} kW system (tilt 30°, facing south)</caption>  {# describes the table #}
