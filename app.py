@@ -9,6 +9,8 @@ Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 """
 import os
 from functools import wraps
+from datetime import datetime  # to read the current date and time
+from zoneinfo import ZoneInfo  # time zones (Asia/Beirut); tzdata provides the data on Windows
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
@@ -27,7 +29,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 EXAMPLE_KW = 3          # example system size: 3 kW, a typical Lebanese home system
 EXAMPLE_TILT = 30       # panels tilted 30°, close to the best angle for Lebanon's latitude
 EXAMPLE_AZIMUTH = 0     # 0 = facing south in Open-Meteo (-90 east, 90 west)
-
+LEBANON = ZoneInfo("Asia/Beirut")  # Open-Meteo times are in Lebanese time, so "now" must be too
 
 def system_production(lat, lon, panel_kw, tilt, azimuth):
     """Run one solar system through the solar functions: daily kWh, best day, best window."""
@@ -37,7 +39,8 @@ def system_production(lat, lon, panel_kw, tilt, azimuth):
     hourly = solar.hourly_kwh(forecast, panel_kw)  # kWh produced each hour by this system
     daily = solar.daily_kwh(hourly)  # total kWh per day
     best = solar.best_day(daily)  # the day with the most production (or None)
-    window = solar.best_window(hourly, best["date"]) if best else None  # best 4 hours of that day
+    now = datetime.now(LEBANON).strftime("%Y-%m-%dT%H:%M")  # current Lebanese time, same format as the API's times
+    window = solar.next_best_window(hourly, now)  # best 4 hours that haven't finished yet (today or later)
     return {"kw": panel_kw, "daily": daily, "best_day": best, "best_window": window}  # one dict for the template
 
 
