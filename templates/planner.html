@@ -1,0 +1,352 @@
+
+{% extends "base.html" %}
+
+{% block title %}Solar Planner{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<section class="planner-page">
+
+    <div class="planner-intro">
+        <h1>Solar System Planner</h1>
+        <p>
+            Configure your preferences to calculate a solar system
+            adapted to your appliances and energy consumption.
+        </p>
+    </div>
+
+    {% if errors %}
+        <div class="error-message" role="alert">
+            {% for field, message in errors.items() %}
+                <p>{{ message }}</p>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="planner-card">
+
+        <h2>System Configuration</h2>
+
+        <p class="form-description">
+            Complete the following information to calculate your
+            recommended solar installation.
+        </p>
+
+        <div class="appliance-info">
+            <p>
+                <strong>Your appliances:</strong>
+                {{ appliances|length }} appliance(s) registered.
+            </p>
+
+            {% if not appliances %}
+                <p class="error-message">
+                    You need to add appliances before using the planner.
+                </p>
+                <a href="{{ url_for('appliances') }}" class="planner-button">
+                    Add Appliances
+                </a>
+            {% endif %}
+        </div>
+
+        {% if appliances %}
+
+        <form method="POST" action="{{ url_for('planner') }}"
+              id="planner-form">
+
+            <!-- Town selection -->
+            <div class="form-group">
+                <label for="town-search">Select your town</label>
+
+                <input
+                    type="text"
+                    id="town-search"
+                    placeholder="Search for a town in Lebanon..."
+                    autocomplete="off"
+                    value="{{ plan_data.town_name if plan_data else '' }}"
+                    required
+                >
+
+                <input
+                    type="hidden"
+                    name="place_id"
+                    id="place_id"
+                    value="{{ plan_data.place_id if plan_data else '' }}"
+                >
+
+                <div id="town-suggestions"
+                     class="town-suggestions"></div>
+
+                <p id="town-status" class="town-status">
+                    Select a town from the suggestions.
+                </p>
+            </div>
+
+            <!-- Autonomy -->
+            <div class="form-group">
+                <label for="autonomy_days">
+                    Battery autonomy
+                </label>
+
+                <select name="autonomy_days"
+                        id="autonomy_days"
+                        required>
+
+                    <option value="0"
+                        {% if plan_data and plan_data.autonomy_days == 0 %}
+                            selected
+                        {% endif %}>
+                        0 days
+                    </option>
+
+                    <option value="1"
+                        {% if not plan_data or plan_data.autonomy_days == 1 %}
+                            selected
+                        {% endif %}>
+                        1 day
+                    </option>
+
+                    <option value="2"
+                        {% if plan_data and plan_data.autonomy_days == 2 %}
+                            selected
+                        {% endif %}>
+                        2 days
+                    </option>
+
+                    <option value="3"
+                        {% if plan_data and plan_data.autonomy_days == 3 %}
+                            selected
+                        {% endif %}>
+                        3 days
+                    </option>
+
+                </select>
+
+                <small>
+                    Number of days the battery should provide energy
+                    without solar production.
+                </small>
+            </div>
+
+            <!-- Grid availability -->
+            <div class="form-group">
+                <label for="has_grid">
+                    Do you have access to EDL or a generator?
+                </label>
+
+                <select name="has_grid" id="has_grid" required>
+
+                    <option value="yes"
+                        {% if plan_data and plan_data.has_grid == 'yes' %}
+                            selected
+                        {% endif %}>
+                        Yes
+                    </option>
+
+                    <option value="no"
+                        {% if plan_data and plan_data.has_grid == 'no' %}
+                            selected
+                        {% endif %}>
+                        No
+                    </option>
+
+                </select>
+            </div>
+
+            <!-- Panel wattage -->
+            <div class="form-group">
+                <label for="panel_w">
+                    Solar panel wattage (W)
+                </label>
+
+                <input
+                    type="number"
+                    name="panel_w"
+                    id="panel_w"
+                    min="100"
+                    max="800"
+                    step="1"
+                    value="{{ plan_data.panel_w if plan_data else 550 }}"
+                    required
+                >
+
+                <small>
+                    Choose a panel wattage between 100 W and 800 W.
+                    The default value is 550 W.
+                </small>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit"
+                    class="planner-button"
+                    id="calculate-button">
+                Calculate My Solar System
+            </button>
+
+        </form>
+
+        {% endif %}
+
+    </div>
+
+</section>
+
+{% endblock %}
+
+
+{% block extra_scripts %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const searchInput = document.getElementById("town-search");
+    const placeIdInput = document.getElementById("place_id");
+    const suggestionsBox = document.getElementById("town-suggestions");
+    const townStatus = document.getElementById("town-status");
+    const plannerForm = document.getElementById("planner-form");
+
+    if (!searchInput || !plannerForm) {
+        return;
+    }
+
+    let searchTimeout = null;
+
+    // Search for towns
+    searchInput.addEventListener("input", function () {
+
+        const query = searchInput.value.trim();
+
+        // A changed town name invalidates the previous selection
+        placeIdInput.value = "";
+
+        suggestionsBox.innerHTML = "";
+
+        if (query.length < 2) {
+            townStatus.textContent =
+                "Enter at least two characters to search.";
+            return;
+        }
+
+        townStatus.textContent = "Searching...";
+
+        clearTimeout(searchTimeout);
+
+        searchTimeout = setTimeout(async function () {
+
+            try {
+
+                const response = await fetch(
+                    "/search?q=" + encodeURIComponent(query)
+                );
+
+                if (!response.ok) {
+                    throw new Error("Search request failed.");
+                }
+
+                const html = await response.text();
+
+                const parser = new DOMParser();
+                const documentResult =
+                    parser.parseFromString(html, "text/html");
+
+                const townLinks =
+                    documentResult.querySelectorAll('a[href*="/town/"]');
+
+                suggestionsBox.innerHTML = "";
+
+                const towns = [];
+
+                townLinks.forEach(function (link) {
+
+                    const match = link.getAttribute("href")
+                        .match(/\/town\/(\d+)/);
+
+                    if (!match) {
+                        return;
+                    }
+
+                    const id = match[1];
+                    const name = link.textContent.trim();
+
+                    if (!name) {
+                        return;
+                    }
+
+                    if (!towns.some(town => town.id === id)) {
+                        towns.push({
+                            id: id,
+                            name: name
+                        });
+                    }
+                });
+
+                if (towns.length === 0) {
+                    townStatus.textContent =
+                        "No matching towns found.";
+                    return;
+                }
+
+                towns.forEach(function (town) {
+
+                    const button = document.createElement("button");
+
+                    button.type = "button";
+                    button.className = "town-suggestion";
+                    button.textContent = town.name;
+
+                    button.addEventListener("click", function () {
+
+                        searchInput.value = town.name;
+                        placeIdInput.value = town.id;
+
+                        suggestionsBox.innerHTML = "";
+
+                        townStatus.textContent =
+                            "Selected town: " + town.name;
+
+                    });
+
+                    suggestionsBox.appendChild(button);
+
+                });
+
+                townStatus.textContent =
+                    "Select your town from the suggestions.";
+
+            } catch (error) {
+
+                console.error(error);
+
+                townStatus.textContent =
+                    "Unable to search for towns. Please try again.";
+
+            }
+
+        }, 350);
+
+    });
+
+
+    // Make sure the user selected a valid suggestion
+    plannerForm.addEventListener("submit", function (event) {
+
+        if (!placeIdInput.value) {
+
+            event.preventDefault();
+
+            townStatus.textContent =
+                "Please select a town from the suggestions.";
+
+            searchInput.focus();
+
+        }
+
+    });
+
+});
+</script>
+
+{% endblock %}

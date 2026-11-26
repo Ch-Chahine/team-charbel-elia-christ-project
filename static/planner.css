@@ -1,0 +1,564 @@
+
+/* ================================
+   SOLAR PLANNER
+================================ */
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f5f7fa;
+    color: #243247;
+    line-height: 1.6;
+}
+
+a {
+    text-decoration: none;
+}
+
+/* ================================
+   HEADER
+================================ */
+
+.planner-header {
+    background: #152b46;
+    color: white;
+    padding: 16px 0;
+}
+
+.header-container {
+    width: min(1150px, 92%);
+    margin: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 25px;
+}
+
+.brand {
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.planner-header nav {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.planner-header nav a {
+    color: #dce5f1;
+    font-size: 14px;
+    transition: color 0.2s;
+}
+
+.planner-header nav a:hover,
+.planner-header nav a.active {
+    color: #ffffff;
+    font-weight: bold;
+}
+
+/* ================================
+   MAIN CONTAINER
+================================ */
+
+.planner-container {
+    width: min(950px, 92%);
+    margin: 45px auto;
+}
+
+.page-intro {
+    margin-bottom: 30px;
+}
+
+.eyebrow {
+    color: #237a61;
+    font-size: 12px;
+    letter-spacing: 2px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.page-intro h1 {
+    font-size: 36px;
+    line-height: 1.2;
+    color: #152b46;
+    margin: 0 0 15px;
+}
+
+.page-intro > p:not(.eyebrow) {
+    color: #65748a;
+    max-width: 700px;
+}
+
+/* ================================
+   CARDS
+================================ */
+
+.form-card,
+.info-card,
+.result-card,
+.recommendation-card,
+.error-card,
+.disclaimer {
+    background: white;
+    border-radius: 14px;
+    padding: 28px;
+    margin-bottom: 24px;
+    border: 1px solid #e5eaf0;
+    box-shadow: 0 5px 20px rgba(21, 43, 70, 0.04);
+}
+
+.form-card h2,
+.result-card h2,
+.info-card h2 {
+    color: #152b46;
+    margin-top: 0;
+}
+
+.section-description {
+    color: #718096;
+    margin-bottom: 25px;
+}
+
+/* ================================
+   INFO CARD
+================================ */
+
+.info-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    background: #eef6f4;
+    border-color: #d6e9e2;
+}
+
+.card-icon {
+    font-size: 30px;
+}
+
+.info-card h2 {
+    margin-bottom: 5px;
+}
+
+.info-card p {
+    margin: 5px 0;
+    color: #536477;
+}
+
+.appliance-count {
+    font-weight: bold;
+    color: #237a61 !important;
+}
+
+/* ================================
+   FORMS
+================================ */
+
+.form-group {
+    margin-bottom: 24px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #243247;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 15px;
+    color: #243247;
+    background: white;
+    outline: none;
+    transition: border 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    border-color: #237a61;
+    box-shadow: 0 0 0 3px rgba(35, 122, 97, 0.12);
+}
+
+.field-hint {
+    font-size: 13px;
+    color: #718096;
+    margin-top: 7px;
+}
+
+.selected-town {
+    color: #237a61;
+    font-weight: bold;
+}
+
+.field-error {
+    color: #b42318;
+    font-size: 13px;
+    margin-top: 7px;
+}
+
+/* ================================
+   TOWN SUGGESTIONS
+================================ */
+
+.suggestions {
+    position: relative;
+    width: 100%;
+    z-index: 10;
+}
+
+.suggestion-item {
+    display: block;
+    width: 100%;
+    background: white;
+    color: #243247;
+    padding: 12px 15px;
+    text-align: left;
+    border: 1px solid #e0e6ed;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+.suggestion-item:hover {
+    background: #eef6f4;
+    color: #237a61;
+}
+
+.suggestion-message {
+    background: white;
+    border: 1px solid #e0e6ed;
+    padding: 12px 15px;
+    color: #718096;
+    font-size: 14px;
+}
+
+/* ================================
+   BUTTONS
+================================ */
+
+.form-actions {
+    margin-top: 30px;
+}
+
+.primary-button,
+.secondary-button {
+    display: inline-block;
+    border: none;
+    border-radius: 8px;
+    padding: 14px 22px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.primary-button {
+    background: #237a61;
+    color: white;
+}
+
+.primary-button:hover {
+    background: #1b624e;
+    transform: translateY(-1px);
+}
+
+.secondary-button {
+    background: #e9eef5;
+    color: #152b46;
+}
+
+.secondary-button:hover {
+    background: #dce5ef;
+}
+
+.text-link {
+    color: #237a61;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.text-link:hover {
+    text-decoration: underline;
+}
+
+/* ================================
+   RESULT DETAILS
+================================ */
+
+.details-grid,
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.detail-item {
+    padding: 15px;
+    background: #f7f9fc;
+    border-radius: 9px;
+}
+
+.detail-label,
+.metric-label {
+    display: block;
+    font-size: 13px;
+    color: #718096;
+    margin-bottom: 6px;
+}
+
+.detail-value {
+    display: block;
+    font-weight: bold;
+    color: #152b46;
+}
+
+.metric {
+    padding: 22px;
+    border-radius: 10px;
+    background: #f7f9fc;
+    border: 1px solid #e8edf3;
+}
+
+.metric strong {
+    font-size: 24px;
+    color: #152b46;
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.recommendation-card {
+    border: 1px solid #cfe4dc;
+}
+
+.recommendation-heading {
+    margin-bottom: 25px;
+}
+
+.recommendation-heading h2 {
+    color: #152b46;
+    margin-top: 0;
+}
+
+.system-metrics .metric {
+    background: #f0f7f4;
+    border-color: #dbece5;
+}
+
+.architecture-box {
+    margin-top: 25px;
+    padding: 20px;
+    border-radius: 9px;
+    background: #eef6f4;
+}
+
+.architecture-box h3 {
+    margin-top: 0;
+    color: #237a61;
+}
+
+.architecture-box p {
+    margin-bottom: 0;
+}
+
+/* ================================
+   APPLIANCE TABLE
+================================ */
+
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.appliance-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    min-width: 550px;
+}
+
+.appliance-table th,
+.appliance-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #e5eaf0;
+}
+
+.appliance-table th {
+    background: #f2f5f9;
+    color: #152b46;
+    font-size: 13px;
+}
+
+.appliance-table td {
+    font-size: 14px;
+}
+
+/* ================================
+   DISCLAIMER / ERRORS
+================================ */
+
+.disclaimer {
+    background: #f8fafc;
+    box-shadow: none;
+}
+
+.disclaimer h3 {
+    color: #152b46;
+    margin-top: 0;
+}
+
+.disclaimer p {
+    color: #64748b;
+    font-size: 14px;
+}
+
+.error-card {
+    border-left: 4px solid #b42318;
+}
+
+.error-card h2 {
+    color: #b42318;
+}
+
+/* ================================
+   FLASH MESSAGES
+================================ */
+
+.flash-container {
+    margin-bottom: 25px;
+}
+
+.flash-message {
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.flash-message.error {
+    background: #fff0f0;
+    color: #a32121;
+    border: 1px solid #f1caca;
+}
+
+.flash-message.success {
+    background: #eef8f2;
+    color: #237a61;
+    border: 1px solid #d0e8d8;
+}
+
+.flash-message.warning {
+    background: #fff8e8;
+    color: #936300;
+}
+
+.flash-message.info {
+    background: #eef4ff;
+    color: #305b98;
+}
+
+/* ================================
+   ACTIONS
+================================ */
+
+.result-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+}
+
+.install-form {
+    margin: 0;
+}
+
+/* ================================
+   FOOTER
+================================ */
+
+.planner-footer {
+    text-align: center;
+    padding: 25px;
+    color: #718096;
+    background: #eaf0f5;
+    font-size: 13px;
+}
+
+/* ================================
+   RESPONSIVE DESIGN
+================================ */
+
+@media (max-width: 768px) {
+
+    .header-container {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .planner-header nav {
+        gap: 12px;
+    }
+
+    .planner-container {
+        margin: 25px auto;
+    }
+
+    .page-intro h1 {
+        font-size: 28px;
+    }
+
+    .form-card,
+    .info-card,
+    .result-card,
+    .recommendation-card,
+    .error-card,
+    .disclaimer {
+        padding: 20px;
+    }
+
+    .details-grid,
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .metric strong {
+        font-size: 21px;
+    }
+
+    .result-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .result-actions a,
+    .result-actions button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+
+    .planner-header nav {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .page-intro h1 {
+        font-size: 25px;
+    }
+
+    .brand {
+        font-size: 20px;
+    }
+}
