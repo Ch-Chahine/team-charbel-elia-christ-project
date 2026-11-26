@@ -1,266 +1,119 @@
-
 {% extends "base.html" %}
-
-{% block title %}Solar System Results{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">
-{% endblock %}
-
+{% block title %}Your suggested system{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">{% endblock %}
 {% block content %}
+<section class="planner-page" aria-labelledby="result-title">
+  <h1 id="result-title">Your suggested solar system</h1>
 
-<section class="planner-page">
+  {% if error %}  {# error state: API down or invalid town #}
+    <div class="error-box" role="alert"><p>{{ error }}</p></div>
+    <p><a class="button" href="{{ url_for('planner') }}">Back to the planner</a></p>
+  {% else %}
+    <p>For <strong>{{ town.name }}</strong>, sized for the darkest month
+       ({{ result.psh_winter }} peak sun hours a day).</p>
 
-    <div class="planner-intro">
-        <h1>Your Solar System Results</h1>
-        <p>
-            Here is the recommended solar installation based on
-            your appliances, location, and selected preferences.
-        </p>
+    <div class="planner-card">
+      <h2>1. Your house needs</h2>
+      <dl class="result-grid">
+        <div><dt>Daily energy</dt><dd>{{ summary.e_day }} kWh</dd></div>
+        <div><dt>Night energy</dt><dd>{{ summary.e_night }} kWh</dd></div>
+        <div><dt>Peak load (all on)</dt><dd>{{ summary.peak_kw }} kW</dd></div>
+      </dl>
     </div>
 
-    {% if error %}
-
-        <div class="error-message" role="alert">
-            <p>{{ error }}</p>
-        </div>
-
-        <a href="{{ url_for('planner') }}" class="planner-button">
-            Return to Planner
-        </a>
-
-    {% else %}
-
-        <!-- Selected configuration -->
-        <div class="planner-card">
-
-            <h2>Selected Configuration</h2>
-
-            <div class="configuration-grid">
-
-                <div class="result-item">
-                    <span class="result-label">Town</span>
-                    <strong>{{ town.get('name', 'Selected town') }}</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">Battery Autonomy</span>
-                    <strong>{{ plan.autonomy_days }} days</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">EDL / Generator</span>
-                    <strong>
-                        {{ 'Yes' if plan.has_grid else 'No' }}
-                    </strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">Panel Wattage</span>
-                    <strong>{{ plan.panel_w }} W</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">Winter Sun Hours</span>
-                    <strong>{{ result.psh_winter }} hours</strong>
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- Energy consumption -->
-        <div class="planner-card">
-
-            <h2>Energy Consumption Analysis</h2>
-
-            <div class="results-grid">
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Daily Energy Consumption
-                    </span>
-                    <strong>{{ summary.e_day }} kWh</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Night Energy Consumption
-                    </span>
-                    <strong>{{ summary.e_night }} kWh</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Peak Power
-                    </span>
-                    <strong>{{ summary.peak_kw }} kW</strong>
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- Recommended solar system -->
-        <div class="planner-card">
-
-            <h2>Recommended Solar System</h2>
-
-            <div class="results-grid">
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Required Solar Capacity
-                    </span>
-                    <strong>{{ result.kwp }} kWp</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Number of Solar Panels
-                    </span>
-                    <strong>{{ result.panels }}</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Installed Solar Capacity
-                    </span>
-                    <strong>{{ result.installed_kwp }} kWp</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Panel Wattage
-                    </span>
-                    <strong>{{ result.panel_w }} W</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Estimated Roof Area
-                    </span>
-                    <strong>{{ result.roof_m2 }} m²</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Inverter Size
-                    </span>
-                    <strong>
-                        {% if result.inverter_kw %}
-                            {{ result.inverter_kw }} kW
-                        {% else %}
-                            Not available
-                        {% endif %}
-                    </strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Battery Capacity
-                    </span>
-                    <strong>{{ result.battery_kwh }} kWh</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        Battery Modules
-                    </span>
-                    <strong>{{ result.battery_modules }}</strong>
-                </div>
-
-                <div class="result-item">
-                    <span class="result-label">
-                        System Architecture
-                    </span>
-                    <strong>{{ result.architecture }}</strong>
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- Appliances -->
-        <div class="planner-card">
-
-            <h2>Appliances Included in the Calculation</h2>
-
-            {% if appliances %}
-
-                <div class="table-wrapper">
-
-                    <table class="appliances-table">
-
-                        <thead>
-                            <tr>
-                                <th>Appliance</th>
-                                <th>Power (W)</th>
-                                <th>Quantity</th>
-                                <th>Day Hours</th>
-                                <th>Night Hours</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-
-                            {% for appliance in appliances %}
-
-                                <tr>
-                                    <td>{{ appliance.name }}</td>
-                                    <td>{{ appliance.power_w }}</td>
-                                    <td>{{ appliance.quantity }}</td>
-                                    <td>{{ appliance.hours_day }}</td>
-                                    <td>{{ appliance.hours_night }}</td>
-                                </tr>
-
-                            {% endfor %}
-
-                        </tbody>
-
-                    </table>
-
-                </div>
-
-            {% else %}
-
-                <p>No appliances found.</p>
-
-            {% endif %}
-
-        </div>
-
-
-        <!-- Actions -->
-        <div class="planner-actions">
-
-            <a href="{{ url_for('planner') }}"
-               class="secondary-button">
-                Edit Configuration
-            </a>
-
-            <form method="POST"
-                  action="{{ url_for('planner_install') }}">
-
-                <button type="submit" class="planner-button">
-                    Install This Solar System
-                </button>
-
-            </form>
-
-        </div>
-
-        <p class="result-disclaimer">
-            These results are estimates based on your registered
-            appliances and selected configuration. A professional
-            assessment is recommended before installation.
-        </p>
-
-    {% endif %}
-
+    <div class="planner-card">
+      <h2>2. Suggested system</h2>
+      <dl class="result-grid">
+        <div><dt>Panels</dt><dd>{{ result.panels }} × {{ result.panel_w }} W</dd></div>
+        <div><dt>Installed power</dt><dd>{{ result.installed_kwp }} kWp <small>(needed {{ result.kwp }})</small></dd></div>
+        <div><dt>Roof area</dt><dd>≈ {{ result.roof_m2 }} m²</dd></div>
+        <div><dt>Inverter</dt>
+          <dd>{% if result.inverter_kw %}{{ result.inverter_kw }} kW {{ result.architecture }}{% else %}Over 12 kW — ask an installer{% endif %}</dd></div>
+        <div><dt>Battery</dt>
+          <dd>{% if result.battery_kwh %}{{ result.battery_kwh }} kWh ({{ result.battery_modules }} × 5 kWh){% else %}None{% endif %}</dd></div>
+        <div><dt>Architecture</dt><dd>{{ result.architecture|capitalize }}</dd></div>
+      </dl>
+
+      <h3>How it is connected</h3>
+      {# Simple architecture drawing (SVG). role="img" + title/desc so screen readers get the same information. #}
+      <svg class="architecture" viewBox="0 0 640 260" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">{{ result.architecture|capitalize }} solar system diagram</title>
+        <desc id="arch-desc">{{ result.panels }} panels feed a {{ result.inverter_kw or 'large' }} kW inverter.
+          {% if result.battery_kwh %}The inverter charges and uses a {{ result.battery_kwh }} kWh battery.{% endif %}
+          {% if plan.has_grid %}EDL or the generator is a second input to the inverter.{% endif %}
+          The inverter powers the house loads ({{ summary.peak_kw }} kW peak).</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrow-head"/>
+          </marker>
+        </defs>
+        <g class="node"><rect x="20" y="20" width="170" height="64" rx="10"/>
+          <text x="105" y="47">Solar panels</text><text x="105" y="68" class="small">{{ result.panels }} × {{ result.panel_w }} W</text></g>
+        <g class="node main"><rect x="235" y="98" width="170" height="64" rx="10"/>
+          <text x="320" y="125">{{ result.architecture|capitalize }} inverter</text>
+          <text x="320" y="146" class="small">{{ result.inverter_kw or '> 12' }} kW</text></g>
+        <g class="node"><rect x="450" y="98" width="170" height="64" rx="10"/>
+          <text x="535" y="125">House loads</text><text x="535" y="146" class="small">{{ summary.peak_kw }} kW peak</text></g>
+        <line x1="190" y1="52" x2="262" y2="98" marker-end="url(#arrow)"/>
+        <line x1="405" y1="130" x2="448" y2="130" marker-end="url(#arrow)"/>
+        {% if result.battery_kwh %}
+          <g class="node"><rect x="235" y="190" width="170" height="56" rx="10"/>
+            <text x="320" y="214">Battery</text><text x="320" y="234" class="small">{{ result.battery_kwh }} kWh</text></g>
+          <line x1="320" y1="164" x2="320" y2="188" marker-start="url(#arrow)" marker-end="url(#arrow)"/>  {# charge ↔ discharge #}
+        {% endif %}
+        {% if plan.has_grid %}
+          <g class="node grid"><rect x="20" y="176" width="170" height="64" rx="10"/>
+            <text x="105" y="203">EDL / generator</text><text x="105" y="224" class="small">backup input</text></g>
+          <line x1="190" y1="200" x2="262" y2="162" marker-end="url(#arrow)"/>
+        {% endif %}
+      </svg>
+    </div>
+
+    <div class="planner-card">
+      <h2>3. Appliances in this calculation</h2>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th scope="col">Appliance</th><th scope="col">Power (W)</th><th scope="col">Qty</th>
+                     <th scope="col">Day h</th><th scope="col">Night h</th></tr></thead>
+          <tbody>
+            {% for a in appliances %}
+              <tr><th scope="row">{{ a.name }}</th><td>{{ a.power_w }}</td><td>{{ a.quantity }}</td>
+                  <td>{{ a.hours_day }}</td><td>{{ a.hours_night }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p>Battery autonomy: {{ plan.autonomy_days }} day{{ '' if plan.autonomy_days == 1 else 's' }} ·
+         EDL / generator: {{ 'yes' if plan.has_grid else 'no' }}</p>
+    </div>
+
+    <p class="disclaimer" role="note"><strong>Estimate only — confirm with a certified installer.</strong>
+      Real needs depend on your roof, shading, cables and the exact equipment.</p>
+
+    <div class="planner-actions">
+      <a class="button button-secondary" href="{{ url_for('planner') }}">Change my answers</a>
+      <a class="button button-secondary" href="{{ url_for('appliances') }}">Change my appliances</a>
+      {% if result.inverter_kw %}  {# only a system we can actually suggest can be saved #}
+        <form method="post" action="{{ url_for('planner_install') }}" id="install-form">
+          {% include "_csrf.html" %}
+          <button type="submit" class="button">I installed this → save as my system</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
 </section>
+{% endblock %}
 
+{% block extra_scripts %}
+<script>
+// Disable the install button after the first click, so a double click can't send the form twice.
+const installForm = document.getElementById("install-form");
+if (installForm) {
+  installForm.addEventListener("submit", function () {
+    const button = installForm.querySelector("button");
+    button.disabled = true;
+    button.textContent = "Saving…";
+  });
+}
+</script>
 {% endblock %}

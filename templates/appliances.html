@@ -1,41 +1,51 @@
-{% extends "base.html" %}
-
+{% extends "base.html" %}  {# shared layout #}
 {% block title %}My appliances{% endblock %}
-
 {% block content %}
 <div class="page">
   <div class="page-heading">
     <div>
       <h1>My appliances</h1>
-      <p>Add the appliances you use so the planner can estimate your household load.</p>
+      <p>Add the appliances you use so the planner can calculate your household load.</p>
     </div>
     <a class="button" href="{{ url_for('appliance_new') }}">Add appliance</a>
   </div>
 
-  {% if appliances %}
+  {% if appliances %}  {# the user has at least one appliance #}
+    {% if summary %}  {# live totals from sizing.load_summary #}
+      <p class="totals" role="status">
+        Daily use <strong>{{ summary.e_day }} kWh</strong> ·
+        night use <strong>{{ summary.e_night }} kWh</strong> ·
+        peak <strong>{{ summary.peak_kw }} kW</strong>
+      </p>
+    {% endif %}
     <div class="card-grid">
-      {% for appliance in appliances %}
+      {% for appliance in appliances %}  {# one card per appliance #}
         <article class="card">
-          <h2>{{ appliance.name }}</h2>
-          <p>{{ appliance.power_w }} W · Quantity: {{ appliance.quantity }}</p>
-          <p>{{ appliance.hours_day }} day hours · {{ appliance.hours_night }} night hours</p>
-
+          <h2>{{ appliance.name }}</h2>  {# {{ }} escapes the name (no XSS) #}
+          <p>{{ appliance.power_w }} W × {{ appliance.quantity }}</p>
+          <p>{{ appliance.hours_day }} h by day · {{ appliance.hours_night }} h at night</p>
           <div class="card-actions">
-            <a href="{{ url_for('appliance_edit', appliance_id=appliance.id) }}">Edit</a>
-            <form method="post"
-                  action="{{ url_for('appliance_delete', appliance_id=appliance.id) }}">
-              {# Add the CSRF token field once Elia enables Flask-WTF CSRF protection. #}
-              <button class="button button-danger" type="submit">Delete</button>
+            <a href="{{ url_for('appliance_edit', appliance_id=appliance.id) }}">Edit <span class="visually-hidden">{{ appliance.name }}</span></a>
+            <form method="post" action="{{ url_for('appliance_delete', appliance_id=appliance.id) }}">  {# POST: deleting changes data #}
+              {% include "_csrf.html" %}
+              <button class="button button-danger" type="submit">Delete <span class="visually-hidden">{{ appliance.name }}</span></button>
             </form>
           </div>
         </article>
       {% endfor %}
     </div>
-  {% else %}
+    <p><a class="button" href="{{ url_for('planner') }}">Next: plan my solar system</a></p>
+  {% else %}  {# empty state #}
     <section class="empty-state">
       <h2>No appliances yet</h2>
-      <p>Add your first appliance to start preparing your planner inputs.</p>
-      <a class="button" href="{{ url_for('appliance_new') }}">Add your first appliance</a>
+      <p>Start from a typical Lebanese house and edit it, or add your appliances one by one.</p>
+      <div class="card-actions">
+        <form method="post" action="{{ url_for('appliance_typical') }}">
+          {% include "_csrf.html" %}
+          <button class="button" type="submit">Add typical appliances</button>
+        </form>
+        <a href="{{ url_for('appliance_new') }}">Add my first appliance</a>
+      </div>
     </section>
   {% endif %}
 </div>

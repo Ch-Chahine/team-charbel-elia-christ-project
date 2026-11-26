@@ -1,0 +1,3 @@
+{# One place for the CSRF field. Include it in every POST form: {% include "_csrf.html" %}
+   csrf_token() exists once Elia turns on Flask-WTF's CSRFProtect; before that the field is simply left out. #}
+{% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
