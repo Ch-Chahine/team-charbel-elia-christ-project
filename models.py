@@ -31,8 +31,6 @@ class User(db.Model):  # table "user"
     notify_performance = db.Column(db.Boolean, nullable=False, default=True)  # wants under-performance/log reminders (on by default)
     last_checked_at = db.Column(db.DateTime, nullable=True)  # last time the notification check ran (None = never)
 
-    favorites = db.relationship("Favorite", backref="user",  # STARTER: user.favorites; removed with Favorite in feature/systems
-                                cascade="all, delete-orphan")  # deleting a user deletes their favorites
     systems = db.relationship("SolarSystem", backref="user",  # user.systems = their solar systems; system.user = the owner
                               cascade="all, delete-orphan")  # deleting a user deletes their systems
     appliances = db.relationship("Appliance", backref="user",  # user.appliances = their house appliances
@@ -44,21 +42,7 @@ class User(db.Model):  # table "user"
 
 
 # ---------------------------------------------------------------------------
-# Favorite -- STARTER example, kept so app.py still runs.
-# Replaced by SolarSystem and removed in the feature/systems branch.
-# ---------------------------------------------------------------------------
-class Favorite(db.Model):  # table "favorite" (instructor's starter, unchanged)
-    id = db.Column(db.Integer, primary_key=True)  # unique number for each favorite
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # owner: links to user.id
-    item_id = db.Column(db.String(50), nullable=False)  # the API's id for the item
-    item_title = db.Column(db.String(255))  # saved title (starter only)
-    item_image = db.Column(db.String(500))  # saved image URL (starter only)
-    __table_args__ = (db.UniqueConstraint("user_id", "item_id",  # a user can't save the same item twice
-                                          name="uniq_user_item"),)  # name of the rule in the database
-
-
-# ---------------------------------------------------------------------------
-# SolarSystem -- a system a user already owns (replaces Favorite)
+# SolarSystem -- a system a user already owns (replaced the starter's Favorite)
 # ---------------------------------------------------------------------------
 class SolarSystem(db.Model):  # table "solar_system"
     id = db.Column(db.Integer, primary_key=True)  # unique number for each system (used in /systems/<id>)

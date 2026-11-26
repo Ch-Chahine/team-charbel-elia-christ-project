@@ -1,0 +1,14 @@
+{% extends "base.html" %}  {# same layout as every page #}
+{% block title %}Welcome{% endblock %}  {# browser tab title #}
+{% block content %}
+<h1>Welcome to SolarSmart</h1>  {# page heading #}
+<form method="post" action="{{ url_for('welcome') }}" class="auth">  {# POST: the answer changes data #}
+  {# CSRF token added in feature/security-config #}
+  <fieldset>  {# groups the question and its answers (accessibility) #}
+    <legend>Do you already have a solar system?</legend>  {# the question, read by screen readers with the buttons #}
+    <button type="submit" name="has_solar" value="yes">Yes, I have one</button>  {# sends has_solar=yes #}
+    <button type="submit" name="has_solar" value="no">No, help me plan one</button>  {# sends has_solar=no #}
+  </fieldset>
+</form>
+<p><a href="{{ url_for('home') }}">Skip for now</a></p>  {# answer later: the question comes back at the next log-in #}
+{% endblock %}

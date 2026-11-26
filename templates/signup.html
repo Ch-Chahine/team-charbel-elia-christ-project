@@ -3,11 +3,12 @@
 {% block content %}
 <h1>Create an account</h1>
 <form method="post" action="{{ url_for('signup') }}" novalidate class="auth">
-  <label>Email <input type="email" name="email" value="{{ data.get('email','') }}"></label>
+  {# CSRF token added in feature/security-config #}
+  <label>Email <input type="email" name="email" value="{{ data.get('email','') }}" autocomplete="username"></label>
   {% if errors.get('email') %}<span class="error">{{ errors['email'] }}</span>{% endif %}
-  <label>Password <input type="password" name="password"></label>
+  <label>Password <input type="password" name="password" autocomplete="new-password"></label>
   {% if errors.get('password') %}<span class="error">{{ errors['password'] }}</span>{% endif %}
-  <label>Confirm password <input type="password" name="confirm"></label>
+  <label>Confirm password <input type="password" name="confirm" autocomplete="new-password"></label>
   {% if errors.get('confirm') %}<span class="error">{{ errors['confirm'] }}</span>{% endif %}
   <button type="submit">Sign up</button>
 </form>

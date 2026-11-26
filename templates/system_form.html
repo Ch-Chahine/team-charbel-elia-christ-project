@@ -1,0 +1,47 @@
+{% extends "base.html" %}  {# shared layout #}
+{% block title %}{% if system %}Edit system{% else %}Add a system{% endif %}{% endblock %}  {# one template for add + edit #}
+{% block content %}
+<div class="page narrow-page">
+  <h1>{% if system %}Edit "{{ system.name }}"{% else %}Add a solar system{% endif %}</h1>
+
+  {% if not system and not town %}  {# step 1 (add only): no valid town chosen yet #}
+    <p>First find the town where your panels are installed:</p>
+    <ol>
+      <li><a href="{{ url_for('home') }}">Search for your town</a>.</li>
+      <li>Open the town's page and choose <strong>"Add a system in this town"</strong>.</li>
+    </ol>
+  {% else %}  {# step 2: show the form #}
+    <p>Town: <strong>{{ town.name if town else "Town unavailable" }}</strong>{% if system %} (the town can't be changed){% endif %}</p>
+    {% if errors.get('form') %}<p class="error" role="alert">{{ errors['form'] }}</p>{% endif %}  {# e.g. the 10-system limit #}
+    {% set data = form_data or {} %}  {# values typed before an error (empty on first load) #}
+
+    <form class="form-card" method="post" novalidate>  {# novalidate: the server does the checking #}
+      {# CSRF token added in feature/security-config #}
+      {% if not system %}<input type="hidden" name="place_id" value="{{ town.id }}">{% endif %}  {# re-checked on the server with get_town() #}
+
+      <label for="name">Name</label>
+      <input id="name" name="name" maxlength="40" value="{{ data.get('name', system.name if system else 'My system') }}">
+      {% if errors.get('name') %}<span class="error">{{ errors['name'] }}</span>{% endif %}
+
+      <label for="panel_kw">Panel power (kW)</label>
+      <input id="panel_kw" name="panel_kw" type="number" min="0.1" max="50" step="0.01" value="{{ data.get('panel_kw', system.panel_kw if system else '') }}">
+      {% if errors.get('panel_kw') %}<span class="error">{{ errors['panel_kw'] }}</span>{% endif %}
+
+      <label for="tilt">Tilt (degrees: 0 = flat, 90 = vertical)</label>
+      <input id="tilt" name="tilt" type="number" min="0" max="90" step="any" value="{{ data.get('tilt', system.tilt if system else 30) }}">
+      {% if errors.get('tilt') %}<span class="error">{{ errors['tilt'] }}</span>{% endif %}
+
+      <label for="azimuth">Direction (degrees: 0 = south, -90 = east, 90 = west)</label>
+      <input id="azimuth" name="azimuth" type="number" min="-180" max="180" step="any" value="{{ data.get('azimuth', system.azimuth if system else 0) }}">
+      {% if errors.get('azimuth') %}<span class="error">{{ errors['azimuth'] }}</span>{% endif %}
+
+      <label for="battery_kwh">Battery capacity (kWh, 0 = no battery)</label>
+      <input id="battery_kwh" name="battery_kwh" type="number" min="0" max="100" step="any" value="{{ data.get('battery_kwh', system.battery_kwh if system else 0) }}">
+      {% if errors.get('battery_kwh') %}<span class="error">{{ errors['battery_kwh'] }}</span>{% endif %}
+
+      <button class="button" type="submit">Save system</button>
+      <a href="{{ url_for('systems') }}">Cancel</a>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
