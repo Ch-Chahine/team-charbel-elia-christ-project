@@ -19,7 +19,7 @@ from models import db, User, Appliance, Plan, SolarSystem
 import api_client
 import solar  # our calculations (daily sunshine summary)
 import sizing
-from validators import validate_signup, validate_login, validate_search, validate_plan
+from validators import validate_signup, validate_login, validate_search,validate_system, validate_plan
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")

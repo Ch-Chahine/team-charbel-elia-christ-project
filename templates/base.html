@@ -20,7 +20,7 @@
       {% if current_user %}
         <a href="{{ url_for('appliances') }}">My Appliances</a>
         <a href="{{ url_for('planner') }}">Planner</a>
-        <a href="{{ url_for('systems') }}">My Favorites</a>
+        <a href="{{ url_for('systems') }}">My Systems</a>
 
         <span class="who">{{ current_user.email }}</span>
         <form method="post" action="{{ url_for('logout') }}" class="logout-form">  {# POST, not a link (Week 9) #}
