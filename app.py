@@ -10,13 +10,7 @@ Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 import os
 from datetime import datetime, timedelta, timezone  # dates for the production log
 from functools import wraps
-<<<<<<< HEAD
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError  # Lebanese time (Asia/Beirut)
-=======
-from datetime import datetime  # to read the current date and time
-from zoneinfo import ZoneInfo  # time zones (Asia/Beirut); tzdata provides the data on Windows
->>>>>>> main
-
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
@@ -648,10 +642,7 @@ LOG_PAGE_SIZE = 60  # show the latest 60 readings
 
 
 def lebanon_today():  # today's date in Beirut (the server on Render runs in UTC)
-    try:
-        return datetime.now(ZoneInfo("Asia/Beirut")).date()  # handles summer time automatically
-    except ZoneInfoNotFoundError:  # no time-zone data on the machine (fixed by tzdata in requirements)
-        return (datetime.now(timezone.utc) + timedelta(hours=2)).date()  # Lebanon winter time as a fallback
+    return datetime.now(LEBANON).date()  # Charbel's LEBANON time zone (tzdata is in requirements.txt)
 
 
 def estimates_by_date(system, town):  # {"2026-11-20": 12.3, ...} for the last 7 days and the next 3
@@ -706,8 +697,10 @@ def system_logs(system_id):
     rows = []  # one row per reading, with the estimate and accuracy when we have one
     for log in logs:
         estimate = estimates.get(log.date.isoformat())  # None for days older than 7 days
-        accuracy = round(log.actual_kwh / estimate * 100) if estimate else None  # % of the estimate
-        rows.append({"log": log, "estimate": estimate, "accuracy": accuracy,
+        in_progress = log.date >= today  # today is not finished: a partial reading vs a full-day estimate is unfair
+        accuracy = (round(log.actual_kwh / estimate * 100)  # % of the estimate
+                    if estimate and not in_progress else None)
+        rows.append({"log": log, "estimate": estimate, "accuracy": accuracy, "in_progress": in_progress,
                      "low": accuracy is not None and accuracy < UNDERPERFORM_RATIO * 100})
     compared = [r["accuracy"] for r in rows if r["accuracy"] is not None]  # readings we could compare
     average = round(sum(compared) / len(compared)) if compared else None  # average accuracy
