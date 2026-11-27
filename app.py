@@ -8,22 +8,22 @@ email + password with Flask sessions.
 Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 """
 import os
+from datetime import datetime, timedelta, timezone  # dates for the production log
 from functools import wraps
-from datetime import datetime  # to read the current date and time
-from zoneinfo import ZoneInfo  # time zones (Asia/Beirut); tzdata provides the data on Windows
-
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError  # Lebanese time (Asia/Beirut)
 
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # IntegrityError = a broken unique rule; SQLAlchemyError = any database error
 
-from models import db, User, Appliance, Plan, SolarSystem, utc_now
+from models import db, User, Appliance, Plan, SolarSystem, ProductionLog, utc_now
 import api_client
 import solar  # our calculations (daily sunshine summary)
 import sizing
-from validators import (validate_signup, validate_login, validate_search, validate_system,
-                                                                          validate_plan, validate_appliance, SYSTEM_RANGES)
+from validators import (validate_signup, validate_login, validate_search, validate_system, 
+                        validate_plan, validate_appliance, validate_log, SYSTEM_RANGES)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
@@ -635,6 +635,96 @@ def planner_install():
         return redirect(url_for("planner_result"))
     flash("Your solar system was added. Edit its tilt and direction if they differ.", "success")
     return redirect(url_for("system_detail", system_id=system.id))  # straight to its forecast
+
+# ---------- production log  --------------------------------
+UNDERPERFORM_RATIO = 0.75  # under 75% of the estimate = "check or clean the panels" (project plan)
+LOG_PAGE_SIZE = 60  # show the latest 60 readings
+
+
+def lebanon_today():  # today's date in Beirut (the server on Render runs in UTC)
+    return datetime.now(LEBANON).date()  # Charbel's LEBANON time zone (tzdata is in requirements.txt)
+
+
+def estimates_by_date(system, town):  # {"2026-11-20": 12.3, ...} for the last 7 days and the next 3
+    """Estimated kWh per day from the same forecast maths as the system page; {} if the API failed."""
+    if not town:  # unknown town or API down
+        return {}
+    forecast = api_client.get_forecast(town["lat"], town["lon"], system.tilt, system.azimuth, past_days=7)
+    if not forecast:  # None (API failed) or [] (invalid inputs)
+        return {}
+    daily = solar.daily_kwh(solar.hourly_kwh(forecast, system.panel_kw))  # same formula as the forecast page
+    return {day["date"]: day["kwh"] for day in daily}
+
+
+def get_own_log(log_id):  # a reading belongs to the user through its system
+    log = db.session.get(ProductionLog, log_id)
+    if log is None:
+        abort(404)
+    if log.system.user_id != g.user.id:  # log -> system -> owner
+        app.logger.warning("User %s was refused log %s", g.user.id, log_id)
+        abort(403)
+    return log
+
+
+@app.route("/systems/<int:system_id>/logs", methods=["GET", "POST"])  # GET = list, POST = add a reading
+@login_required
+def system_logs(system_id):
+    system = get_own_system(system_id)  # Elia's helper: 404 / 403
+    today = lebanon_today()
+    errors, form_data, status = {}, {}, 200
+    if request.method == "POST":
+        errors, values = validate_log(request.form, today)
+        form_data = request.form  # show what was typed if there is an error
+        if not errors:
+            db.session.add(ProductionLog(system_id=system.id, **values))  # system id from the URL (already owner-checked)
+            try:
+                db.session.commit()
+            except IntegrityError:  # UNIQUE(system_id, date): this day already has a reading
+                db.session.rollback()  # Week 10: undo the failed write
+                errors["date"] = "You already logged this day. Delete the old reading first."
+            except SQLAlchemyError:
+                db.session.rollback()
+                app.logger.exception("Could not save production log")
+                errors["form"] = "Could not save the reading. Please try again."
+            else:
+                flash("Reading saved.", "success")
+                return redirect(url_for("system_logs", system_id=system.id))  # Post/Redirect/Get
+        status = 400 if errors else 200
+    town = api_client.get_town(system.place_id) or None  # only to name the town and get coordinates
+    estimates = estimates_by_date(system, town)  # {} if the API failed -> "no estimate" in the table
+    logs = (ProductionLog.query.filter_by(system_id=system.id)
+            .order_by(ProductionLog.date.desc()).limit(LOG_PAGE_SIZE).all())  # newest first
+    rows = []  # one row per reading, with the estimate and accuracy when we have one
+    for log in logs:
+        estimate = estimates.get(log.date.isoformat())  # None for days older than 7 days
+        in_progress = log.date >= today  # today is not finished: a partial reading vs a full-day estimate is unfair
+        accuracy = (round(log.actual_kwh / estimate * 100)  # % of the estimate
+                    if estimate and not in_progress else None)
+        rows.append({"log": log, "estimate": estimate, "accuracy": accuracy, "in_progress": in_progress,
+                     "low": accuracy is not None and accuracy < UNDERPERFORM_RATIO * 100})
+    compared = [r["accuracy"] for r in rows if r["accuracy"] is not None]  # readings we could compare
+    average = round(sum(compared) / len(compared)) if compared else None  # average accuracy
+    return render_template("system_logs.html", system=system, town=town, rows=rows, average=average,
+                           errors=errors, form_data=form_data, today=today.isoformat(),
+                           api_failed=bool(town) and not estimates,
+                           low_limit=round(UNDERPERFORM_RATIO * 100)), status
+
+
+@app.route("/logs/<int:log_id>/delete", methods=["POST"])
+@login_required
+def log_delete(log_id):
+    log = get_own_log(log_id)  # 404 / 403 through the system's owner
+    system_id = log.system_id  # remember where to go back
+    try:
+        db.session.delete(log)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception("Could not delete production log")
+        flash("Could not delete the reading. Please try again.", "error")
+    else:
+        flash("Reading deleted.", "success")
+    return redirect(url_for("system_logs", system_id=system_id))
 
 if __name__ == "__main__":
     app.run(debug=True)
