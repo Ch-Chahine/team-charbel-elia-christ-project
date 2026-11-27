@@ -23,3 +23,14 @@
   - Double-click "I installed this" → only one system. *(write what you saw)*
   - Appliance with day 13 h + night 12 h → error under "night hours". *(write what you saw)*
   - Log in as user B, open /appliances/<A's id>/edit → 403, warning in the terminal. *(write what you saw)*
+
+  
+## 26 Nov 2026 — Production log and accuracy (`feature/production-log`)
+- **Asked:** how to build `/systems/<id>/logs` and compare a reading with the estimate.
+- **Used:** `validate_log` (date not in the future, last 365 days, 0–500 kWh, refuses `nan`); `UNIQUE(system_id, date)` → `IntegrityError` → `rollback()` → message under the date (Week 10); `get_own_log` checks the owner through `log.system.user_id`.
+- **My decisions:** the estimate reuses Charbel's `get_forecast(..., past_days=7)` + `solar.hourly_kwh` + `solar.daily_kwh`, so it is the same number as the forecast page; older readings show "—". Accuracy = measured ÷ estimate × 100; under 75% is marked "low" (same threshold as the `underperform` notification). "Today" is Lebanese time.
+- **Tested:**
+  - Add a reading for today → shown with estimate and accuracy. *(write what you saw)*
+  - Add the same day again → "You already logged this day." *(write what you saw)*
+  - Tomorrow's date / 600 kWh → errors under the fields. *(write what you saw)*
+  - User B tries to delete A's reading → 403. *(write what you saw)*

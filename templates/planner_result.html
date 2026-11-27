@@ -93,11 +93,14 @@
     <div class="planner-actions">
       <a class="button button-secondary" href="{{ url_for('planner') }}">Change my answers</a>
       <a class="button button-secondary" href="{{ url_for('appliances') }}">Change my appliances</a>
-      {% if result.inverter_kw %}  {# only a system we can actually suggest can be saved #}
+      {% if can_install %}  {# only a system inside the normal system limits can be saved #}
         <form method="post" action="{{ url_for('planner_install') }}" id="install-form">
           {% include "_csrf.html" %}
           <button type="submit" class="button">I installed this → save as my system</button>
         </form>
+      {% else %}
+        <p class="error">This system is too large or too small to save here
+           (inverter up to 12 kW, 0.1 to 50 kW of panels, battery up to 100 kWh). Please ask a certified installer.</p>
       {% endif %}
     </div>
   {% endif %}

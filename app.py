@@ -10,6 +10,7 @@ Run locally:   flask run --debug    ->   http://127.0.0.1:5000
 import os
 from functools import wraps
 
+
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -20,7 +21,7 @@ import api_client
 import solar  # our calculations (daily sunshine summary)
 import sizing
 from validators import (validate_signup, validate_login, validate_search, validate_system,
-                        validate_plan, validate_appliance)
+                                                                          validate_plan, validate_appliance, SYSTEM_RANGES)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
@@ -500,9 +501,20 @@ def compute_plan(plan, items):  # the planner maths for one plan, used by the re
         return None, None, None, "This plan's town is not valid any more. Choose your town again."
     summary = sizing.load_summary(appliance_dicts(items))  # daily, night and peak load
     psh = api_client.get_winter_sun_hours(town["lat"], town["lon"])  # always a number (fallback inside)
-    result = sizing.suggest_system(summary["e_day"], summary["e_night"], summary["peak_kw"], psh,
-                                   plan.autonomy_days, plan.has_grid, plan.panel_w)  # server recomputes (A06)
+    result = sizing.suggest_system(e_day=summary["e_day"], e_night=summary["e_night"],
+                                   peak_kw=summary["peak_kw"], psh_winter=psh,
+                                   autonomy_days=plan.autonomy_days, has_grid=plan.has_grid,
+                                   panel_w=plan.panel_w)  # server recomputes (A06); names = no order mistakes
     return town, summary, result, None
+
+
+def can_save_as_system(result):  # can "I installed this" save the suggestion as a normal system?
+    """True only if the suggestion fits the same limits as Elia's system form, so the owner can edit it later."""
+    low_kw, high_kw, _ = SYSTEM_RANGES["panel_kw"]  # 0.1 .. 50 kW
+    _, high_kwh, _ = SYSTEM_RANGES["battery_kwh"]  # .. 100 kWh
+    return (result["inverter_kw"] is not None  # above 12 kW we don't suggest one standard inverter
+            and low_kw <= result["installed_kwp"] <= high_kw  # e.g. 80 kW or 0 kW is refused
+            and result["battery_kwh"] <= high_kwh)
 
 
 @app.route("/api/towns")  # GET /api/towns?q=jou -> JSON list for the planner's town search box
@@ -575,8 +587,10 @@ def planner_result():
         flash("Add your appliances before viewing a plan.", "error")
         return redirect(url_for("appliances"))
     town, summary, result, error = compute_plan(plan, items)  # same code as install
+    can_install = not error and can_save_as_system(result)  # hide the install button when it would be refused
     return render_template("planner_result.html", plan=plan, town=town, appliances=items,
-                           summary=summary, result=result, error=error), (503 if error else 200)
+                           summary=summary, result=result, error=error,
+                           can_install=can_install), (503 if error else 200)
 
 
 @app.route("/planner/install", methods=["POST"])  # "I installed this -> save as my system"
@@ -591,8 +605,9 @@ def planner_install():
     if error:
         flash(error, "error")
         return redirect(url_for("planner_result"))
-    if result["inverter_kw"] is None:  # above 12 kW: we don't suggest one standard system
-        flash("This house needs more than 12 kW. Please ask a certified installer.", "error")
+    if not can_save_as_system(result):  # over 12 kW inverter, panels outside 0.1-50 kW, or battery over 100 kWh
+        flash("This system is outside what we can save (inverter up to 12 kW, 0.1 to 50 kW of panels, "
+              "battery up to 100 kWh). Please ask a certified installer.", "error")
         return redirect(url_for("planner_result"))
     existing = SolarSystem.query.filter_by(user_id=g.user.id, name=PLANNED_SYSTEM_NAME,
                                            place_id=plan.place_id,
@@ -617,7 +632,6 @@ def planner_install():
         return redirect(url_for("planner_result"))
     flash("Your solar system was added. Edit its tilt and direction if they differ.", "success")
     return redirect(url_for("system_detail", system_id=system.id))  # straight to its forecast
-
 
 if __name__ == "__main__":
     app.run(debug=True)
