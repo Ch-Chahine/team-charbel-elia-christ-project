@@ -47,6 +47,7 @@
 
   <p>
     <a href="{{ url_for('system_edit', system_id=system.id) }}">Edit</a>
+    · <a href="{{ url_for('system_logs', system_id=system.id) }}">Production log</a>  {# Christ: real kWh vs estimate #}
     · <a href="{{ url_for('systems') }}">All my systems</a>
   </p>
   <form method="post" action="{{ url_for('system_delete', system_id=system.id) }}">  {# POST: deleting changes data #}

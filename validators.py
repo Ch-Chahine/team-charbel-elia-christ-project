@@ -142,3 +142,35 @@ def validate_system(form):  # check the solar system form (add + edit); same sty
             errors[field] = f"{label} must be between {low} and {high}."
         values[field] = number  # the cleaned number
     return errors, values  # errors = {} when everything is valid
+
+
+
+# ----------  production log ---------------------------------------
+MAX_LOG_KWH = 500  # proposal: 0-500 kWh per day
+LOG_MAX_AGE_DAYS = 365  # readings older than a year are not useful for accuracy (keeps the table small)
+
+
+def validate_log(form, today):  # check one production reading; today = Lebanese date, passed in by the route
+    """Return (errors, values) with values = {date, actual_kwh}."""
+    from datetime import date, timedelta  # only this function needs them
+    errors = {}
+    values = {}
+    try:  # <input type="date"> sends "2026-11-26"; anything else raises ValueError
+        day = date.fromisoformat(form.get("date", "").strip())
+    except ValueError:
+        errors["date"] = "Enter a valid date."
+    else:
+        if day > today:  # can't measure tomorrow's production
+            errors["date"] = "The date cannot be in the future."
+        elif day < today - timedelta(days=LOG_MAX_AGE_DAYS):  # too old
+            errors["date"] = f"The date must be within the last {LOG_MAX_AGE_DAYS} days."
+        values["date"] = day
+    try:
+        kwh = float(form.get("actual_kwh", "").strip())  # e.g. "12.4"
+    except ValueError:
+        errors["actual_kwh"] = "Production must be a number."
+    else:
+        if not math.isfinite(kwh) or not 0 <= kwh <= MAX_LOG_KWH:  # also refuses nan / inf
+            errors["actual_kwh"] = f"Production must be between 0 and {MAX_LOG_KWH} kWh."
+        values["actual_kwh"] = kwh
+    return errors, values
