@@ -1,41 +1,32 @@
 {% extends "base.html" %}
-
-{% block title %}
-  {% if appliance %}Edit appliance{% else %}Add appliance{% endif %}
-{% endblock %}
-
+{% block title %}{% if appliance %}Edit appliance{% else %}Add appliance{% endif %}{% endblock %}
 {% block content %}
 <div class="page narrow-page">
-  <h1>{% if appliance %}Edit appliance{% else %}Add an appliance{% endif %}</h1>
-  <p>Enter typical use for this appliance.</p>
+  <h1>{% if appliance %}Edit {{ appliance.name }}{% else %}Add an appliance{% endif %}</h1>
+  <p>Enter the power written on the label and how long you use it on a normal day.</p>
 
-  {% set data = form_data or {} %}
+  {% if errors.form %}<p class="error" role="alert">{{ errors.form }}</p>{% endif %}  {# e.g. the 50-appliance limit #}
 
-  <form class="form-card" method="post">
-    {# Add the CSRF token field once Elia enables Flask-WTF CSRF protection. #}
+  {# A field shows: what was just typed (form_data) -> else the saved value (appliance) -> else the default #}
+  {% macro value(field, default) -%}
+    {{ form_data.get(field, appliance[field] if appliance else default) }}
+  {%- endmacro %}
 
-    <label for="name">Appliance name</label>
-    <input id="name" name="name" required maxlength="40"
-           value="{{ data.get('name', appliance.name if appliance else '') }}">
+  {# One labelled input with its error message linked by aria-describedby (screen readers read it) #}
+  {% macro field(name, label, attrs, default='') -%}
+    <label for="{{ name }}">{{ label }}</label>
+    <input id="{{ name }}" name="{{ name }}" {{ attrs }} value="{{ value(name, default) }}"
+           {% if errors[name] %}aria-invalid="true" aria-describedby="{{ name }}-error"{% endif %}>
+    {% if errors[name] %}<span class="error" id="{{ name }}-error">{{ errors[name] }}</span>{% endif %}
+  {%- endmacro %}
 
-    <label for="power_w">Power (W)</label>
-    <input id="power_w" name="power_w" type="number" required min="1" max="10000"
-           value="{{ data.get('power_w', appliance.power_w if appliance else '') }}">
-
-    <label for="quantity">Quantity</label>
-    <input id="quantity" name="quantity" type="number" required min="1" max="50"
-           value="{{ data.get('quantity', appliance.quantity if appliance else 1) }}">
-
-    <label for="hours_day">Hours used during the day</label>
-    <input id="hours_day" name="hours_day" type="number" required min="0" max="24"
-           step="0.5"
-           value="{{ data.get('hours_day', appliance.hours_day if appliance else 0) }}">
-
-    <label for="hours_night">Hours used at night</label>
-    <input id="hours_night" name="hours_night" type="number" required min="0" max="24"
-           step="0.5"
-           value="{{ data.get('hours_night', appliance.hours_night if appliance else 0) }}">
-
+  <form class="form-card" method="post" novalidate>  {# novalidate: the server checks everything (we test our own messages) #}
+    {% include "_csrf.html" %}
+    {{ field("name", "Appliance name", 'required maxlength="40"') }}
+    {{ field("power_w", "Power of one unit (W)", 'type="number" required min="1" max="10000" step="1"') }}
+    {{ field("quantity", "Quantity", 'type="number" required min="1" max="50" step="1"', 1) }}
+    {{ field("hours_day", "Hours used during the day", 'type="number" required min="0" max="24" step="0.5"', 0) }}
+    {{ field("hours_night", "Hours used at night", 'type="number" required min="0" max="24" step="0.5"', 0) }}
     <button class="button" type="submit">Save appliance</button>
     <a href="{{ url_for('appliances') }}">Cancel</a>
   </form>

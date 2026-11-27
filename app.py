@@ -12,17 +12,18 @@ from functools import wraps
 from datetime import datetime  # to read the current date and time
 from zoneinfo import ZoneInfo  # time zones (Asia/Beirut); tzdata provides the data on Windows
 
+
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, abort, g)  # g = per-request storage (Week 9: g.user)
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError  # IntegrityError = a broken unique rule; SQLAlchemyError = any database error
 
-from models import db, User, Appliance, Plan, SolarSystem
+from models import db, User, Appliance, Plan, SolarSystem, utc_now
 import api_client
 import solar  # our calculations (daily sunshine summary)
 import sizing
-from validators import validate_signup, validate_login, validate_search,validate_system, validate_plan
-
+from validators import (validate_signup, validate_login, validate_search, validate_system,
+                                                                          validate_plan, validate_appliance, SYSTEM_RANGES)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-me")
 
@@ -356,422 +357,284 @@ def system_delete(system_id):  # delete a system and its production logs
     return redirect(url_for("systems"))  # back to the list
 
 
-# ---------- appliances (login required) ---------------------------
+# ===================================================================
+#  SECTION -- appliances, planner (login required)
+# ===================================================================
+MAX_APPLIANCES = 50  # limit per user, so one account can't fill the database (A06: limits on counts)
 
-def validate_appliance_form(form):
-    """Validate and clean appliance fields from a submitted form."""
-    name = form.get("name", "").strip()
-
-    try:
-        power_w = int(form.get("power_w", ""))
-        quantity = int(form.get("quantity", ""))
-        hours_day = float(form.get("hours_day", ""))
-        hours_night = float(form.get("hours_night", ""))
-    except (TypeError, ValueError):
-        return None, "Enter valid numbers for power, quantity, and hours."
-
-    if not 1 <= len(name) <= 40:
-        return None, "Name must be between 1 and 40 characters."
-    if not 1 <= power_w <= 10000:
-        return None, "Power must be between 1 and 10,000 W."
-    if not 1 <= quantity <= 50:
-        return None, "Quantity must be between 1 and 50."
-    if not 0 <= hours_day <= 24 or not 0 <= hours_night <= 24:
-        return None, "Each hours value must be between 0 and 24."
-    if hours_day + hours_night > 24:
-        return None, "Day and night hours cannot add up to more than 24."
-
-    return {
-        "name": name,
-        "power_w": power_w,
-        "quantity": quantity,
-        "hours_day": hours_day,
-        "hours_night": hours_night,
-    }, None
+# Typical Lebanese house loads, offered once so the user only has to edit them (proposal: "pre-filled").
+TYPICAL_APPLIANCES = (  # (name, watts of one unit, quantity, hours by day, hours by night)
+    ("Fridge", 150, 1, 12, 12),  # runs all the time (the compressor cycles on and off)
+    ("LED lights", 10, 8, 2, 5),  # mostly in the evening
+    ("TV", 100, 1, 3, 3),
+    ("Internet router", 10, 1, 12, 12),  # on 24 hours
+    ("Washing machine", 500, 1, 1, 0),  # best run in the sunny window
+    ("Water pump", 750, 1, 0.5, 0),  # short daytime use
+    ("Ceiling fan", 60, 2, 4, 4),
+    ("Phone and laptop chargers", 65, 2, 2, 2),
+)
 
 
-@app.route("/appliances")
+def get_own_appliance(appliance_id):  # load an appliance and make sure it belongs to the logged-in user
+    appliance = db.session.get(Appliance, appliance_id)  # the row with this id, or None
+    if appliance is None:  # no appliance with this id
+        abort(404)  # "page not found"
+    if appliance.user_id != g.user.id:  # it exists, but belongs to someone else
+        app.logger.warning("User %s was refused appliance %s", g.user.id, appliance_id)  # log it (A09)
+        abort(403)  # "forbidden"
+    return appliance  # safe to show or change
+
+
+def my_appliances():  # the logged-in user's appliances, alphabetical
+    return Appliance.query.filter_by(user_id=g.user.id).order_by(Appliance.name).all()  # ownership filter
+
+
+@app.route("/appliances")  # GET /appliances -> my appliances
+@login_required  # only for logged-in users
+def appliances():  # list the user's appliances
+    items = my_appliances()  # only this user's rows
+    summary = sizing.load_summary(appliance_dicts(items)) if items else None  # live totals under the list
+    return render_template("appliances.html", appliances=items, summary=summary)
+
+
+@app.route("/appliances/new", methods=["GET", "POST"])  # GET = form, POST = save
 @login_required
-def appliances():
-    items = (
-        Appliance.query
-        .filter_by(user_id=session["user_id"])
-        .order_by(Appliance.name)
-        .all()
-    )
-    return render_template("appliances.html", appliances=items)
-
-
-@app.route("/appliances/new", methods=["GET", "POST"])
-@login_required
-def appliance_new():
-    if request.method == "POST":
-        values, error = validate_appliance_form(request.form)
-
-        if error:
-            flash(error, "error")
-            return render_template(
-                "appliance_form.html", appliance=None, form_data=request.form
-            ), 400
-
-        appliance = Appliance(user_id=session["user_id"], **values)
-        db.session.add(appliance)
-
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-            app.logger.exception("Could not save appliance")
+def appliance_new():  # add one appliance
+    if request.method == "POST":  # the form was submitted
+        errors, values = validate_appliance(request.form)  # check every field on the server
+        if not errors and len(g.user.appliances) >= MAX_APPLIANCES:  # already at the limit
+            errors["form"] = f"You can have at most {MAX_APPLIANCES} appliances."
+        if errors:  # show the form again with a message under each wrong field
+            return render_template("appliance_form.html", appliance=None,
+                                   errors=errors, form_data=request.form), 400  # 400 = bad input
+        db.session.add(Appliance(user_id=g.user.id, **values))  # owner from the SESSION, never from the form
+        try:  # the database can still fail
+            db.session.commit()  # save it
+        except SQLAlchemyError:  # any database error
+            db.session.rollback()  # undo, so the session stays usable (Week 10)
+            app.logger.exception("Could not save appliance")  # details in the server log only
             flash("Could not save the appliance. Please try again.", "error")
-            return render_template(
-                "appliance_form.html", appliance=None, form_data=request.form
-            ), 500
-
+            return render_template("appliance_form.html", appliance=None,
+                                   errors={}, form_data=request.form), 500
         flash("Appliance added.", "success")
-        return redirect(url_for("appliances"))
+        return redirect(url_for("appliances"))  # Post/Redirect/Get: refresh won't add it twice
+    return render_template("appliance_form.html", appliance=None, errors={}, form_data={})  # GET: empty form
 
-    return render_template(
-        "appliance_form.html", appliance=None, form_data={}
-    )
+
+@app.route("/appliances/typical", methods=["POST"])  # POST only: it writes to the database
+@login_required
+def appliance_typical():  # add the typical Lebanese appliances in one click (only when the list is empty)
+    if g.user.appliances:  # already has appliances -> don't add duplicates
+        flash("You already have appliances. Edit them or add new ones one by one.", "error")
+        return redirect(url_for("appliances"))
+    for name, power_w, quantity, hours_day, hours_night in TYPICAL_APPLIANCES:  # one row per typical load
+        db.session.add(Appliance(user_id=g.user.id, name=name, power_w=power_w, quantity=quantity,
+                                 hours_day=hours_day, hours_night=hours_night))
+    try:
+        db.session.commit()  # all rows saved together (one transaction)
+    except SQLAlchemyError:
+        db.session.rollback()
+        app.logger.exception("Could not add typical appliances")
+        flash("Could not add the appliances. Please try again.", "error")
+    else:
+        flash("Typical appliances added. Edit them so they match your house.", "success")
+    return redirect(url_for("appliances"))
 
 
 @app.route("/appliances/<int:appliance_id>/edit", methods=["GET", "POST"])
 @login_required
-def appliance_edit(appliance_id):
-    appliance = db.session.get(Appliance, appliance_id)
-
-    if appliance is None:
-        abort(404)
-    if appliance.user_id != session["user_id"]:
-        abort(403)
-
+def appliance_edit(appliance_id):  # change one appliance
+    appliance = get_own_appliance(appliance_id)  # 404 if missing, 403 if not yours
     if request.method == "POST":
-        values, error = validate_appliance_form(request.form)
-
-        if error:
-            flash(error, "error")
-            return render_template(
-                "appliance_form.html", appliance=appliance, form_data=request.form
-            ), 400
-
-        for field, value in values.items():
-            setattr(appliance, field, value)
-
+        errors, values = validate_appliance(request.form)
+        if errors:
+            return render_template("appliance_form.html", appliance=appliance,
+                                   errors=errors, form_data=request.form), 400
+        for field, value in values.items():  # copy each cleaned value onto the row
+            setattr(appliance, field, value)  # e.g. appliance.power_w = 150
         try:
             db.session.commit()
-        except Exception:
+        except SQLAlchemyError:
             db.session.rollback()
             app.logger.exception("Could not update appliance")
             flash("Could not update the appliance. Please try again.", "error")
-            return render_template(
-                "appliance_form.html", appliance=appliance, form_data=request.form
-            ), 500
-
+            return render_template("appliance_form.html", appliance=appliance,
+                                   errors={}, form_data=request.form), 500
         flash("Appliance updated.", "success")
         return redirect(url_for("appliances"))
-
-    return render_template(
-        "appliance_form.html", appliance=appliance, form_data={}
-    )
+    return render_template("appliance_form.html", appliance=appliance, errors={}, form_data={})  # GET: filled form
 
 
-@app.route("/appliances/<int:appliance_id>/delete", methods=["POST"])
+@app.route("/appliances/<int:appliance_id>/delete", methods=["POST"])  # POST only: a link can't delete
 @login_required
 def appliance_delete(appliance_id):
-    appliance = db.session.get(Appliance, appliance_id)
-
-    if appliance is None:
-        abort(404)
-    if appliance.user_id != session["user_id"]:
-        abort(403)
-
+    appliance = get_own_appliance(appliance_id)  # 404 / 403 checks
     try:
         db.session.delete(appliance)
         db.session.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.session.rollback()
         app.logger.exception("Could not delete appliance")
         flash("Could not delete the appliance. Please try again.", "error")
     else:
         flash("Appliance deleted.", "success")
-
     return redirect(url_for("appliances"))
 
 
+# ---------- planner ------------------------------------------------
+PLANNED_SYSTEM_NAME = "My planned system"  # name given to the system created by "I installed it"
 
-@app.route("/planner", methods=["GET", "POST"])
+
+def appliance_dicts(items):  # Appliance rows -> the plain dicts sizing.load_summary expects
+    return [{"power_w": a.power_w, "quantity": a.quantity,
+             "hours_day": a.hours_day, "hours_night": a.hours_night} for a in items]
+
+
+def latest_plan():  # the logged-in user's most recent plan, or None
+    return (Plan.query.filter_by(user_id=g.user.id)  # ownership filter
+            .order_by(Plan.created_at.desc(), Plan.id.desc()).first())  # newest first
+
+
+def compute_plan(plan, items):  # the planner maths for one plan, used by the result page AND by install
+    """Return (town, summary, result, error). error is a message when the town can't be used."""
+    town = api_client.get_town(plan.place_id)  # dict, {} (invalid) or None (API failed)
+    if town is None:  # Open-Meteo down or slow
+        return None, None, None, "The weather service is not responding. Please try again in a minute."
+    if not town:  # the saved id is no longer a valid Lebanese town
+        return None, None, None, "This plan's town is not valid any more. Choose your town again."
+    summary = sizing.load_summary(appliance_dicts(items))  # daily, night and peak load
+    psh = api_client.get_winter_sun_hours(town["lat"], town["lon"])  # always a number (fallback inside)
+    result = sizing.suggest_system(e_day=summary["e_day"], e_night=summary["e_night"],
+                                   peak_kw=summary["peak_kw"], psh_winter=psh,
+                                   autonomy_days=plan.autonomy_days, has_grid=plan.has_grid,
+                                   panel_w=plan.panel_w)  # server recomputes (A06); names = no order mistakes
+    return town, summary, result, None
+
+
+def can_save_as_system(result):  # can "I installed this" save the suggestion as a normal system?
+    """True only if the suggestion fits the same limits as Elia's system form, so the owner can edit it later."""
+    low_kw, high_kw, _ = SYSTEM_RANGES["panel_kw"]  # 0.1 .. 50 kW
+    _, high_kwh, _ = SYSTEM_RANGES["battery_kwh"]  # .. 100 kWh
+    return (result["inverter_kw"] is not None  # above 12 kW we don't suggest one standard inverter
+            and low_kw <= result["installed_kwp"] <= high_kw  # e.g. 80 kW or 0 kW is refused
+            and result["battery_kwh"] <= high_kwh)
+
+
+@app.route("/api/towns")  # GET /api/towns?q=jou -> JSON list for the planner's town search box
+@login_required  # only the planner uses it
+def api_towns():
+    errors, query = validate_search(request.args)  # same rules as /search (2-60 characters, allowed letters)
+    if errors:  # invalid input -> no API call
+        return {"error": errors["q"], "towns": []}, 400  # Flask turns a dict into JSON
+    towns = api_client.search_towns(query)  # list, [] or None
+    if towns is None:  # Open-Meteo failed
+        return {"error": "The weather service is not responding. Please try again.", "towns": []}, 503
+    return {"towns": [{"id": t["id"], "name": t["name"], "region": t["region"] or "Lebanon"}
+                      for t in towns]}  # only the fields the page needs
+
+
+@app.route("/planner", methods=["GET", "POST"])  # GET = form, POST = save the inputs
 @login_required
 def planner():
-    user_id = session["user_id"]
-
-    appliances = Appliance.query.filter_by(
-        user_id=user_id
-    ).order_by(Appliance.name).all()
-
-    if not appliances:
+    items = my_appliances()  # the planner's input
+    if not items:  # nothing to size yet
         flash("Add your appliances before creating a solar plan.", "error")
         return redirect(url_for("appliances"))
-
-    latest_plan = (
-        Plan.query
-        .filter_by(user_id=user_id)
-        .order_by(Plan.created_at.desc(), Plan.id.desc())
-        .first()
-    )
-
+    plan = latest_plan()  # the plan we update (one plan per user, so the table doesn't grow forever)
     if request.method == "POST":
-        errors, values = validate_plan(request.form)
-
-        if not errors:
+        errors, values = validate_plan(request.form)  # check every field
+        if not errors:  # the id is a whole number -> does the town exist and is it in Lebanon?
             town = api_client.get_town(values["place_id"])
-
-            if town is None:
-                flash(
-                    "Weather service is not responding. Please try again.",
-                    "error"
-                )
-                return render_template(
-                    "planner.html",
-                    appliances=appliances,
-                    plan_data=request.form,
-                    errors=errors,
-                ), 503
-
-            if not town:
-                errors["place_id"] = "Choose a valid town."
-
+            if town is None:  # API down
+                flash("The weather service is not responding. Please try again.", "error")
+                return render_template("planner.html", appliances=items,
+                                       plan_data=request.form, errors={}), 503
+            if not town:  # {} -> unknown id or outside Lebanon
+                errors["place_id"] = "Choose your town from the suggestions."
         if errors:
-            return render_template(
-                "planner.html",
-                appliances=appliances,
-                plan_data=request.form,
-                errors=errors,
-            ), 400
-
-        plan = Plan(
-            user_id=user_id,
-            place_id=values["place_id"],
-            autonomy_days=values["autonomy_days"],
-            has_grid=values["has_grid"],
-            panel_w=values["panel_w"],
-        )
-
-        db.session.add(plan)
-
+            return render_template("planner.html", appliances=items,
+                                   plan_data=request.form, errors=errors), 400
+        if plan is None:  # first plan for this user
+            plan = Plan(user_id=g.user.id)  # owner from the session
+            db.session.add(plan)
+        for field, value in values.items():  # copy the cleaned inputs onto the row
+            setattr(plan, field, value)
+        plan.created_at = utc_now()  # "saved at" = now, so the newest plan is always this one
         try:
             db.session.commit()
-        except Exception:
+        except SQLAlchemyError:
             db.session.rollback()
             app.logger.exception("Could not save planner inputs")
             flash("Could not save your plan. Please try again.", "error")
-
-            return render_template(
-                "planner.html",
-                appliances=appliances,
-                plan_data=request.form,
-                errors={}
-            ), 500
-
-        return redirect(url_for("planner_result"))
-
-    plan_data = {
-        "place_id": latest_plan.place_id if latest_plan else "",
-        "autonomy_days": latest_plan.autonomy_days if latest_plan else 1,
-        "has_grid": (
-            "yes" if latest_plan and latest_plan.has_grid else "no"
-        ),
-        "panel_w": latest_plan.panel_w if latest_plan else 550,
-    }
-
-    return render_template(
-        "planner.html",
-        appliances=appliances,
-        plan_data=plan_data,
-        errors={},
-    )
+            return render_template("planner.html", appliances=items,
+                                   plan_data=request.form, errors={}), 500
+        return redirect(url_for("planner_result"))  # results are recomputed there, never stored
+    plan_data = {"place_id": "", "town_name": "", "autonomy_days": "1", "has_grid": "yes", "panel_w": "550"}  # defaults
+    if plan:  # show the previous inputs again
+        town = api_client.get_town(plan.place_id) or {}  # only to show the town's name in the box
+        plan_data = {"place_id": plan.place_id if town else "", "town_name": town.get("name", ""),
+                     "autonomy_days": str(plan.autonomy_days), "has_grid": "yes" if plan.has_grid else "no",
+                     "panel_w": str(plan.panel_w)}  # strings, like request.form, so the template compares one way
+    return render_template("planner.html", appliances=items, plan_data=plan_data, errors={})
 
 
-@app.route("/planner/result")
+@app.route("/planner/result")  # GET: load calculation + suggested system
 @login_required
 def planner_result():
-    user_id = session["user_id"]
-    plan = (
-        Plan.query
-        .filter_by(user_id=user_id)
-        .order_by(Plan.created_at.desc(), Plan.id.desc())
-        .first()
-    )
-
+    plan = latest_plan()
     if plan is None:
-        flash("Create a plan first.", "error")
+        flash("Fill in the planner first.", "error")
         return redirect(url_for("planner"))
-
-    appliances = Appliance.query.filter_by(user_id=user_id).order_by(
-        Appliance.name
-    ).all()
-
-    if not appliances:
+    items = my_appliances()
+    if not items:
         flash("Add your appliances before viewing a plan.", "error")
         return redirect(url_for("appliances"))
-
-    town = api_client.get_town(plan.place_id)
-
-    if town is None:
-        return render_template(
-            "planner_result.html",
-            plan=plan,
-            town=None,
-            appliances=appliances,
-            summary=None,
-            result=None,
-            error="Weather service is not responding. Please try again.",
-        ), 503
-
-    if not town:
-        return render_template(
-            "planner_result.html",
-            plan=plan,
-            town={},
-            appliances=appliances,
-            summary=None,
-            result=None,
-            error="This plan's town is invalid. Choose the town again.",
-        ), 400
-
-    appliance_data = [
-        {
-            "power_w": appliance.power_w,
-            "quantity": appliance.quantity,
-            "hours_day": appliance.hours_day,
-            "hours_night": appliance.hours_night,
-        }
-        for appliance in appliances
-    ]
-
-    summary = sizing.load_summary(appliance_data)
-    psh = api_client.get_winter_sun_hours(town["lat"], town["lon"])
-    result = sizing.suggest_system(
-        summary["e_day"],
-        summary["e_night"],
-        summary["peak_kw"],
-        psh,
-        plan.autonomy_days,
-        plan.has_grid,
-        plan.panel_w,
-    )
-
-    return render_template(
-        "planner_result.html",
-        plan=plan,
-        town=town,
-        appliances=appliances,
-        summary=summary,
-        result=result,
-        error=None,
-    )
+    town, summary, result, error = compute_plan(plan, items)  # same code as install
+    can_install = not error and can_save_as_system(result)  # hide the install button when it would be refused
+    return render_template("planner_result.html", plan=plan, town=town, appliances=items,
+                           summary=summary, result=result, error=error,
+                           can_install=can_install), (503 if error else 200)
 
 
-
-@app.route("/planner/install", methods=["POST"])
+@app.route("/planner/install", methods=["POST"])  # "I installed this -> save as my system"
 @login_required
 def planner_install():
-    user_id = session["user_id"]
-
-    plan = (
-        Plan.query
-        .filter_by(user_id=user_id)
-        .order_by(Plan.created_at.desc(), Plan.id.desc())
-        .first()
-    )
-
-    if plan is None:
-        flash("Create a plan before installing it.", "error")
+    plan = latest_plan()
+    items = my_appliances()
+    if plan is None or not items:
+        flash("Fill in the planner first.", "error")
         return redirect(url_for("planner"))
-
-    appliances = Appliance.query.filter_by(
-        user_id=user_id
-    ).all()
-
-    if not appliances:
-        flash("Add your appliances before installing a plan.", "error")
-        return redirect(url_for("appliances"))
-
-    town = api_client.get_town(plan.place_id)
-
-    if town is None:
-        flash("Weather service is not responding. Please try again.", "error")
+    town, summary, result, error = compute_plan(plan, items)  # recompute: never trust numbers from the browser
+    if error:
+        flash(error, "error")
         return redirect(url_for("planner_result"))
-
-    if not town:
-        flash("This plan's town is invalid. Choose the town again.", "error")
-        return redirect(url_for("planner"))
-
-    appliance_data = [
-        {
-            "power_w": appliance.power_w,
-            "quantity": appliance.quantity,
-            "hours_day": appliance.hours_day,
-            "hours_night": appliance.hours_night,
-        }
-        for appliance in appliances
-    ]
-
-    summary = sizing.load_summary(appliance_data)
-
-    psh = api_client.get_winter_sun_hours(
-        town["lat"], town["lon"]
-    )
-
-    result = sizing.suggest_system(
-        summary["e_day"],
-        summary["e_night"],
-        summary["peak_kw"],
-        psh,
-        plan.autonomy_days,
-        plan.has_grid,
-        plan.panel_w,
-    )
-
-    if result["inverter_kw"] is None:
-        flash(
-            "This system is over 12 kW. Please consult a certified installer.",
-            "error"
-        )
+    if not can_save_as_system(result):  # over 12 kW inverter, panels outside 0.1-50 kW, or battery over 100 kWh
+        flash("This system is outside what we can save (inverter up to 12 kW, 0.1 to 50 kW of panels, "
+              "battery up to 100 kWh). Please ask a certified installer.", "error")
         return redirect(url_for("planner_result"))
-
-    system = SolarSystem(
-        user_id=user_id,
-        place_id=plan.place_id,
-        name="My planned system",
-        panel_kw=result["installed_kwp"],
-        battery_kwh=result["battery_kwh"],
-        tilt=30,
-        azimuth=0,
-    )
-
+    existing = SolarSystem.query.filter_by(user_id=g.user.id, name=PLANNED_SYSTEM_NAME,
+                                           place_id=plan.place_id,
+                                           panel_kw=result["installed_kwp"]).first()  # same plan already saved?
+    if existing:  # double click or second visit -> don't create a copy
+        flash("This planned system is already in your systems.", "success")
+        return redirect(url_for("system_detail", system_id=existing.id))
+    if len(g.user.systems) >= MAX_SYSTEMS:  # same limit as Elia's "Add a system"
+        flash(f"You can have at most {MAX_SYSTEMS} systems.", "error")
+        return redirect(url_for("systems"))
+    system = SolarSystem(user_id=g.user.id, place_id=plan.place_id, name=PLANNED_SYSTEM_NAME,
+                         panel_kw=result["installed_kwp"], battery_kwh=result["battery_kwh"],
+                         tilt=30, azimuth=0)  # 30° facing south: the usual Lebanese installation (editable later)
     db.session.add(system)
-
-    user = db.session.get(User, user_id)
-
-    if user is None:
-        db.session.rollback()
-        flash("Your account could not be found.", "error")
-        return redirect(url_for("login"))
-
-    user.has_solar = True
-
+    g.user.has_solar = True  # the user now owns a system
     try:
         db.session.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.session.rollback()
-        app.logger.exception("Could not install planned solar system")
+        app.logger.exception("Could not save planned system")
         flash("Could not save your solar system. Please try again.", "error")
         return redirect(url_for("planner_result"))
-
-    flash("Your solar system was added.", "success")
-    return redirect(url_for("systems"))
-
-
+    flash("Your solar system was added. Edit its tilt and direction if they differ.", "success")
+    return redirect(url_for("system_detail", system_id=system.id))  # straight to its forecast
 
 if __name__ == "__main__":
     app.run(debug=True)

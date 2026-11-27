@@ -1,352 +1,131 @@
-
 {% extends "base.html" %}
-
-{% block title %}Solar Planner{% endblock %}
-
-{% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">
-{% endblock %}
-
+{% block title %}Solar planner{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{{ url_for('static', filename='planner.css') }}">{% endblock %}
 {% block content %}
+<section class="planner-page" aria-labelledby="planner-title">
+  <h1 id="planner-title">Solar system planner</h1>
+  <p>Tell us where you live and what backup you need. We size the system for winter so it is enough all year.</p>
 
-<section class="planner-page">
-
-    <div class="planner-intro">
-        <h1>Solar System Planner</h1>
-        <p>
-            Configure your preferences to calculate a solar system
-            adapted to your appliances and energy consumption.
-        </p>
+  {% if errors %}  {# server-side errors: one summary at the top, announced by screen readers #}
+    <div class="error-box" role="alert">
+      <p>Please fix the following:</p>
+      <ul>{% for message in errors.values() %}<li>{{ message }}</li>{% endfor %}</ul>
     </div>
+  {% endif %}
 
-    {% if errors %}
-        <div class="error-message" role="alert">
-            {% for field, message in errors.items() %}
-                <p>{{ message }}</p>
-            {% endfor %}
-        </div>
-    {% endif %}
+  <div class="planner-card">
+    <p><strong>{{ appliances|length }}</strong> appliance{{ '' if appliances|length == 1 else 's' }} will be used.
+       <a href="{{ url_for('appliances') }}">Edit my appliances</a></p>
 
-    <div class="planner-card">
+    <form method="post" action="{{ url_for('planner') }}" id="planner-form">
+      {% include "_csrf.html" %}
 
-        <h2>System Configuration</h2>
-
-        <p class="form-description">
-            Complete the following information to calculate your
-            recommended solar installation.
+      <div class="form-group">
+        <label for="town-search">Your town</label>
+        <input type="text" id="town-search" name="town_name" autocomplete="off"
+               placeholder="e.g. Jounieh" maxlength="60" aria-describedby="town-status"
+               value="{{ plan_data.get('town_name', '') }}">  {# town_name is only shown back; the server uses place_id #}
+        <input type="hidden" name="place_id" id="place_id" value="{{ plan_data.get('place_id', '') }}">
+        <div id="town-suggestions" class="town-suggestions"></div>
+        <p id="town-status" class="field-hint" role="status" aria-live="polite">
+          {% if plan_data.get('place_id') %}Selected town: {{ plan_data.get('town_name') }}{% else %}Type at least 2 letters, then pick your town.{% endif %}
         </p>
+        {% if errors.place_id %}<p class="error">{{ errors.place_id }}</p>{% endif %}
+      </div>
 
-        <div class="appliance-info">
-            <p>
-                <strong>Your appliances:</strong>
-                {{ appliances|length }} appliance(s) registered.
-            </p>
+      <div class="form-group">
+        <label for="autonomy_days">Battery autonomy</label>
+        <select name="autonomy_days" id="autonomy_days" aria-describedby="autonomy-hint">
+          {% for days in ["0", "1", "2", "3"] %}  {# compared as text: GET and POST both give strings #}
+            <option value="{{ days }}" {% if plan_data.get('autonomy_days')|string == days %}selected{% endif %}>
+              {{ days }} day{{ '' if days == '1' else 's' }}
+            </option>
+          {% endfor %}
+        </select>
+        <p id="autonomy-hint" class="field-hint">How many days the battery should cover the night load. 0 = no battery.</p>
+      </div>
 
-            {% if not appliances %}
-                <p class="error-message">
-                    You need to add appliances before using the planner.
-                </p>
-                <a href="{{ url_for('appliances') }}" class="planner-button">
-                    Add Appliances
-                </a>
-            {% endif %}
-        </div>
+      <div class="form-group">
+        <label for="has_grid">Do you have EDL or a generator?</label>
+        <select name="has_grid" id="has_grid" aria-describedby="grid-hint">
+          <option value="yes" {% if plan_data.get('has_grid') == 'yes' %}selected{% endif %}>Yes</option>
+          <option value="no" {% if plan_data.get('has_grid') == 'no' %}selected{% endif %}>No</option>
+        </select>
+        <p id="grid-hint" class="field-hint">Yes → hybrid system (solar + battery + EDL/generator). No → off-grid.</p>
+      </div>
 
-        {% if appliances %}
+      <div class="form-group">
+        <label for="panel_w">Panel model (W)</label>
+        <input type="number" name="panel_w" id="panel_w" min="100" max="800" step="1"
+               value="{{ plan_data.get('panel_w', '550') }}" aria-describedby="panel-hint">
+        <p id="panel-hint" class="field-hint">Most panels sold in Lebanon are 550 W.</p>
+      </div>
 
-        <form method="POST" action="{{ url_for('planner') }}"
-              id="planner-form">
-
-            <!-- Town selection -->
-            <div class="form-group">
-                <label for="town-search">Select your town</label>
-
-                <input
-                    type="text"
-                    id="town-search"
-                    placeholder="Search for a town in Lebanon..."
-                    autocomplete="off"
-                    value="{{ plan_data.town_name if plan_data else '' }}"
-                    required
-                >
-
-                <input
-                    type="hidden"
-                    name="place_id"
-                    id="place_id"
-                    value="{{ plan_data.place_id if plan_data else '' }}"
-                >
-
-                <div id="town-suggestions"
-                     class="town-suggestions"></div>
-
-                <p id="town-status" class="town-status">
-                    Select a town from the suggestions.
-                </p>
-            </div>
-
-            <!-- Autonomy -->
-            <div class="form-group">
-                <label for="autonomy_days">
-                    Battery autonomy
-                </label>
-
-                <select name="autonomy_days"
-                        id="autonomy_days"
-                        required>
-
-                    <option value="0"
-                        {% if plan_data and plan_data.autonomy_days == 0 %}
-                            selected
-                        {% endif %}>
-                        0 days
-                    </option>
-
-                    <option value="1"
-                        {% if not plan_data or plan_data.autonomy_days == 1 %}
-                            selected
-                        {% endif %}>
-                        1 day
-                    </option>
-
-                    <option value="2"
-                        {% if plan_data and plan_data.autonomy_days == 2 %}
-                            selected
-                        {% endif %}>
-                        2 days
-                    </option>
-
-                    <option value="3"
-                        {% if plan_data and plan_data.autonomy_days == 3 %}
-                            selected
-                        {% endif %}>
-                        3 days
-                    </option>
-
-                </select>
-
-                <small>
-                    Number of days the battery should provide energy
-                    without solar production.
-                </small>
-            </div>
-
-            <!-- Grid availability -->
-            <div class="form-group">
-                <label for="has_grid">
-                    Do you have access to EDL or a generator?
-                </label>
-
-                <select name="has_grid" id="has_grid" required>
-
-                    <option value="yes"
-                        {% if plan_data and plan_data.has_grid == 'yes' %}
-                            selected
-                        {% endif %}>
-                        Yes
-                    </option>
-
-                    <option value="no"
-                        {% if plan_data and plan_data.has_grid == 'no' %}
-                            selected
-                        {% endif %}>
-                        No
-                    </option>
-
-                </select>
-            </div>
-
-            <!-- Panel wattage -->
-            <div class="form-group">
-                <label for="panel_w">
-                    Solar panel wattage (W)
-                </label>
-
-                <input
-                    type="number"
-                    name="panel_w"
-                    id="panel_w"
-                    min="100"
-                    max="800"
-                    step="1"
-                    value="{{ plan_data.panel_w if plan_data else 550 }}"
-                    required
-                >
-
-                <small>
-                    Choose a panel wattage between 100 W and 800 W.
-                    The default value is 550 W.
-                </small>
-            </div>
-
-            <!-- Submit -->
-            <button type="submit"
-                    class="planner-button"
-                    id="calculate-button">
-                Calculate My Solar System
-            </button>
-
-        </form>
-
-        {% endif %}
-
-    </div>
-
+      <button type="submit" class="button" id="calculate-button">Calculate my solar system</button>
+    </form>
+  </div>
 </section>
-
 {% endblock %}
-
 
 {% block extra_scripts %}
-
 <script>
+// Town search for the planner: asks OUR server (/api/towns), never Open-Meteo directly.
 document.addEventListener("DOMContentLoaded", function () {
+  const input = document.getElementById("town-search");    // the visible text box
+  const placeId = document.getElementById("place_id");     // the hidden id the server checks
+  const box = document.getElementById("town-suggestions"); // where the suggestion buttons go
+  const statusText = document.getElementById("town-status"); // loading / error / selected messages
+  const form = document.getElementById("planner-form");
+  const button = document.getElementById("calculate-button");
+  let timer = null;                                         // waits until the user stops typing
 
-    const searchInput = document.getElementById("town-search");
-    const placeIdInput = document.getElementById("place_id");
-    const suggestionsBox = document.getElementById("town-suggestions");
-    const townStatus = document.getElementById("town-status");
-    const plannerForm = document.getElementById("planner-form");
-
-    if (!searchInput || !plannerForm) {
-        return;
+  input.addEventListener("input", function () {
+    placeId.value = "";                                     // a new name cancels the old choice
+    box.textContent = "";                                   // remove old suggestions
+    clearTimeout(timer);
+    const query = input.value.trim();
+    if (query.length < 2) {
+      statusText.textContent = "Type at least 2 letters, then pick your town.";
+      return;
     }
+    statusText.textContent = "Searching…";                  // loading state
+    timer = setTimeout(async function () {                  // 400 ms after the last key
+      try {
+        const response = await fetch("/api/towns?q=" + encodeURIComponent(query));
+        const data = await response.json();                 // {towns: [...]} or {error: "..."}
+        if (!response.ok) { statusText.textContent = data.error; return; }  // error state
+        if (data.towns.length === 0) { statusText.textContent = "No town in Lebanon matches."; return; }
+        data.towns.forEach(function (town) {
+          const choice = document.createElement("button");  // a real button: keyboard accessible
+          choice.type = "button";                            // must not submit the form
+          choice.className = "town-suggestion";
+          choice.textContent = town.name + " — " + town.region;  // textContent, never innerHTML (no XSS)
+          choice.addEventListener("click", function () {
+            input.value = town.name;
+            placeId.value = town.id;
+            box.textContent = "";
+            statusText.textContent = "Selected town: " + town.name;  // success state
+            input.focus();
+          });
+          box.appendChild(choice);
+        });
+        statusText.textContent = data.towns.length + " town(s) found. Pick yours.";
+      } catch (error) {
+        statusText.textContent = "Could not reach the server. Please try again.";
+      }
+    }, 400);
+  });
 
-    let searchTimeout = null;
-
-    // Search for towns
-    searchInput.addEventListener("input", function () {
-
-        const query = searchInput.value.trim();
-
-        // A changed town name invalidates the previous selection
-        placeIdInput.value = "";
-
-        suggestionsBox.innerHTML = "";
-
-        if (query.length < 2) {
-            townStatus.textContent =
-                "Enter at least two characters to search.";
-            return;
-        }
-
-        townStatus.textContent = "Searching...";
-
-        clearTimeout(searchTimeout);
-
-        searchTimeout = setTimeout(async function () {
-
-            try {
-
-                const response = await fetch(
-                    "/search?q=" + encodeURIComponent(query)
-                );
-
-                if (!response.ok) {
-                    throw new Error("Search request failed.");
-                }
-
-                const html = await response.text();
-
-                const parser = new DOMParser();
-                const documentResult =
-                    parser.parseFromString(html, "text/html");
-
-                const townLinks =
-                    documentResult.querySelectorAll('a[href*="/town/"]');
-
-                suggestionsBox.innerHTML = "";
-
-                const towns = [];
-
-                townLinks.forEach(function (link) {
-
-                    const match = link.getAttribute("href")
-                        .match(/\/town\/(\d+)/);
-
-                    if (!match) {
-                        return;
-                    }
-
-                    const id = match[1];
-                    const name = link.textContent.trim();
-
-                    if (!name) {
-                        return;
-                    }
-
-                    if (!towns.some(town => town.id === id)) {
-                        towns.push({
-                            id: id,
-                            name: name
-                        });
-                    }
-                });
-
-                if (towns.length === 0) {
-                    townStatus.textContent =
-                        "No matching towns found.";
-                    return;
-                }
-
-                towns.forEach(function (town) {
-
-                    const button = document.createElement("button");
-
-                    button.type = "button";
-                    button.className = "town-suggestion";
-                    button.textContent = town.name;
-
-                    button.addEventListener("click", function () {
-
-                        searchInput.value = town.name;
-                        placeIdInput.value = town.id;
-
-                        suggestionsBox.innerHTML = "";
-
-                        townStatus.textContent =
-                            "Selected town: " + town.name;
-
-                    });
-
-                    suggestionsBox.appendChild(button);
-
-                });
-
-                townStatus.textContent =
-                    "Select your town from the suggestions.";
-
-            } catch (error) {
-
-                console.error(error);
-
-                townStatus.textContent =
-                    "Unable to search for towns. Please try again.";
-
-            }
-
-        }, 350);
-
-    });
-
-
-    // Make sure the user selected a valid suggestion
-    plannerForm.addEventListener("submit", function (event) {
-
-        if (!placeIdInput.value) {
-
-            event.preventDefault();
-
-            townStatus.textContent =
-                "Please select a town from the suggestions.";
-
-            searchInput.focus();
-
-        }
-
-    });
-
+  form.addEventListener("submit", function (event) {
+    if (!placeId.value) {                                   // the user typed but never picked a town
+      event.preventDefault();
+      statusText.textContent = "Please pick your town from the suggestions.";
+      input.focus();
+      return;
+    }
+    button.disabled = true;                                 // no double submit
+    button.textContent = "Calculating…";
+  });
 });
 </script>
-
 {% endblock %}
