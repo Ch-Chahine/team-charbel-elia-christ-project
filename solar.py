@@ -58,6 +58,17 @@ def best_window(hourly, date, hours=4):  # best block of consecutive hours on on
     start_hour = int(first[11:13]) - 1  # values are averages of the PREVIOUS hour, so "11:00" covers 10:00–11:00
     return {"date": date, "start": f"{start_hour:02d}:00", "end": last[11:16], "kwh": round(best_total, 2)}
 
+def next_best_window(hourly, now, hours=4):
+    """Best window that hasn't finished yet, today or a later day; None if there is none."""
+    upcoming = [hour for hour in hourly if hour["time"] > now]  # keep hours that end after now (labels are end times)
+    best = None  # nothing found yet
+    for date in sorted({hour["time"][:10] for hour in upcoming}):  # each remaining day once, in order
+        window = best_window(upcoming, date, hours)  # best block of that day, using only the remaining hours
+        if window and (best is None or window["kwh"] > best["kwh"]):  # a real window, better than the best so far
+            best = window  # remember it
+    return best  # e.g. {"date": "2026-11-26", "start": "09:00", "end": "13:00", "kwh": 7.68}, or None
+
+
 def daily_kwh(hourly):  # add up the system's hourly kWh per day
     """Return [{date, kwh}] in date order from hourly_kwh's list."""
     days = {}  # "2026-11-22" -> total kWh so far that day

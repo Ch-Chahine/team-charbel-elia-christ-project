@@ -20,8 +20,8 @@
         <p>Best day: <strong>{{ production.best_day.date }}</strong> with {{ production.best_day.kwh }} kWh.</p>  {# from solar.best_day #}
       {% endif %}
       {% if production.best_window %}  {# only if a best window exists #}
-        <p>Best time to run heavy appliances: <strong>{{ production.best_window.start }}–{{ production.best_window.end }}</strong> ({{ production.best_window.kwh }} kWh).</p>  {# from solar.best_window #}
-      {% endif %}
+                <p>Next best time to run heavy appliances: <strong>{{ production.best_window.date }}, {{ production.best_window.start }}–{{ production.best_window.end }}</strong> ({{ production.best_window.kwh }} kWh).</p>  {# from solar.next_best_window: never in the past #}
+                 {% endif %}
       <table>  {# kWh per day for this system #}
         <caption>Estimated production of this {{ system.panel_kw }} kW system (tilt {{ system.tilt }}°, direction {{ system.azimuth }}°)</caption>
         <thead>
